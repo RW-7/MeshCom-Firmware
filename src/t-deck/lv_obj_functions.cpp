@@ -19,6 +19,8 @@
 #include "tdeck_helpers.h"
 #include <loop_functions_extern.h>
 #include <math.h>
+#include <cstring>
+#include <vector>
 
 #include "event_functions.h"
 #include <lora_setchip.h>
@@ -59,9 +61,15 @@ lv_obj_t    *setup_utc;
 lv_obj_t    *btn_msg_id_label;
 lv_obj_t    *btn_ack_id_label;
 
-lv_obj_t    *text_ta;
+lv_obj_t    *msg_list = NULL;
 lv_obj_t    *track_ta;
 
+static lv_obj_t *msg_list_hint_label = NULL;
+
+static lv_style_t msg_style_incoming;
+static lv_style_t msg_style_outgoing;
+static lv_style_t msg_style_system;
+static bool msg_styles_ready = false;
 lv_obj_t    *btn_time_label;
 lv_obj_t    *btn_time_label1;
 lv_obj_t    *btn_time_label2;
@@ -100,6 +108,34 @@ lv_obj_t    *header_locator_label;
 
 static bool tab_menu_visible = false;
 
+enum class MsgBubbleType
+{
+    Incoming,
+    Outgoing,
+    System
+};
+
+struct MsgBubble
+{
+    MsgBubbleType type;
+    String header;
+    String timestamp;
+    String body;
+};
+
+struct MsgTabEntry
+{
+    String group;
+    lv_obj_t *button;
+    std::vector<MsgBubble> bubbles;
+};
+
+static std::vector<MsgTabEntry> msg_tab_entries;
+static lv_obj_t *msg_tab_bar = NULL;
+static lv_obj_t *msg_tab_hint_label = NULL;
+static int msg_active_tab_index = -1;
+static const size_t MSG_TAB_MAX_MESSAGES = 50;
+
 static void tab_menu_button_event_cb(lv_event_t * e);
 static void tdeck_set_tab_menu_visible(bool show);
 static void update_header_sat_indicator(void);
@@ -110,6 +146,22 @@ static bool compute_maidenhead_locator(double lat, double lon, char *buffer, siz
 static int clamp_int(int value, int min_val, int max_val);
 static void apply_tab_bar_styles(void);
 static const char DEFAULT_LOCATOR_TEXT[] = "JJ00AAAA";
+static void init_msg_tab_bar(lv_obj_t *parent);
+static void msg_tab_button_event_cb(lv_event_t * e);
+static void msg_tabs_update_hint(void);
+static void msg_tabs_select_index(int index);
+static void msg_tabs_trim_history(std::vector<MsgBubble> &bubbles);
+static MsgTabEntry *msg_tabs_find_entry(const String &group, int *index_out);
+static MsgTabEntry *msg_tabs_get_or_create_entry(const String &group, int *index_out);
+static void msg_tabs_add_message(const String &group, const MsgBubble &bubble);
+static void msg_tabs_clear_all(void);
+static void msg_render_active_tab(void);
+static void msg_list_show_hint(const char *text);
+static void msg_list_append_bubble(const MsgBubble &bubble);
+static void ensure_msg_styles(void);
+static String build_timestamp_string(void);
+static bool is_numeric_string(const String &value);
+static void msg_focus_and_alert(bool bWithAudio);
 static void update_header_locator_label(void);
 static bool compute_locator_from_settings(char *buffer, size_t len);
 static bool compute_maidenhead_locator(double lat, double lon, char *buffer, size_t len);
@@ -892,33 +944,21 @@ void setDisplayLayout(lv_obj_t *parent)
 
     ////////////////////////////////////////////////////////////////////////////
     // TEXT OUTPUT
-    text_ta = lv_textarea_create(t2);
-    lv_textarea_set_cursor_click_pos(text_ta, false);
-    lv_textarea_set_cursor_pos(text_ta, 0);
-    lv_textarea_set_text_selection(text_ta, false);
-    lv_obj_set_size(text_ta, 300, LV_VER_RES * 0.6);
-    lv_textarea_set_text(text_ta, "");
-    lv_textarea_set_max_length(text_ta, 4048);
-    lv_obj_align(text_ta, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_add_style(text_ta, &ta_style, LV_PART_MAIN);
+    msg_list = lv_obj_create(t2);
+    lv_obj_set_size(msg_list, 300, LV_VER_RES * 0.6);
+    lv_obj_align(msg_list, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_set_style_bg_opa(msg_list, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(msg_list, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(msg_list, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_row(msg_list, 0, LV_PART_MAIN);
+    lv_obj_set_scroll_dir(msg_list, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(msg_list, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_flex_flow(msg_list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(msg_list, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER);
+    lv_obj_add_flag(msg_list, LV_OBJ_FLAG_SCROLLABLE);
+    msg_list_show_hint("No messages yet");
 
-    // TIME
-    lv_obj_t * btn_time = lv_btn_create(t2);    /*Add a button the current screen*/
-    lv_obj_set_pos(btn_time, 0, 145);           /*Set its position*/
-    lv_obj_set_size(btn_time, 145, 20);         /*Set its size*/
-
-    btn_time_label = lv_label_create(btn_time); /*Add a label to the button*/
-    lv_label_set_text(btn_time_label, "time");  /*Set the labels text*/
-    lv_obj_center(btn_time_label);
-
-    // BATT
-    lv_obj_t * btn_batt = lv_btn_create(t2);    /*Add a button the current screen*/
-    lv_obj_set_pos(btn_batt, 146, 145);           /*Set its position*/
-    lv_obj_set_size(btn_batt, 145, 20);         /*Set its size*/
-
-    btn_batt_label = lv_label_create(btn_batt); /*Add a label to the button*/
-    lv_label_set_text(btn_batt_label, "Batt --");  /*Set the labels text*/
-    lv_obj_center(btn_batt_label);
+    init_msg_tab_bar(t2);
 
     ////////////////////////////////////////////////////////////////////////////
     // POSITION
@@ -1627,6 +1667,393 @@ static int clamp_int(int value, int min_val, int max_val)
     return value;
 }
 
+static void msg_tabs_update_hint(void)
+{
+    bool has_entries = !msg_tab_entries.empty();
+
+    if(msg_tab_bar != NULL)
+    {
+        if(has_entries)
+            lv_obj_clear_flag(msg_tab_bar, LV_OBJ_FLAG_HIDDEN);
+        else
+            lv_obj_add_flag(msg_tab_bar, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    if(msg_tab_hint_label == NULL)
+        return;
+
+    if(has_entries)
+        lv_obj_add_flag(msg_tab_hint_label, LV_OBJ_FLAG_HIDDEN);
+    else
+        lv_obj_clear_flag(msg_tab_hint_label, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void msg_list_clear(void)
+{
+    if(msg_list == NULL)
+        return;
+
+    lv_obj_clean(msg_list);
+    msg_list_hint_label = NULL;
+}
+
+static void msg_list_show_hint(const char *text)
+{
+    if(msg_list == NULL)
+        return;
+
+    msg_list_clear();
+    msg_list_hint_label = lv_label_create(msg_list);
+    lv_label_set_text(msg_list_hint_label, text != NULL ? text : "");
+    lv_obj_set_style_text_color(msg_list_hint_label, lv_palette_darken(LV_PALETTE_GREY, 1), LV_PART_MAIN);
+    lv_obj_align(msg_list_hint_label, LV_ALIGN_CENTER, 0, 0);
+}
+
+static void ensure_msg_styles(void)
+{
+    if(msg_styles_ready)
+        return;
+
+    msg_styles_ready = true;
+
+    lv_style_init(&msg_style_incoming);
+    lv_style_set_bg_opa(&msg_style_incoming, LV_OPA_COVER);
+    lv_style_set_bg_color(&msg_style_incoming, lv_color_hex(0xD7F5D0));
+    lv_style_set_radius(&msg_style_incoming, 14);
+
+    lv_style_init(&msg_style_outgoing);
+    lv_style_set_bg_opa(&msg_style_outgoing, LV_OPA_COVER);
+    lv_style_set_bg_color(&msg_style_outgoing, lv_color_hex(0xD4E8FF));
+    lv_style_set_radius(&msg_style_outgoing, 14);
+
+    lv_style_init(&msg_style_system);
+    lv_style_set_bg_opa(&msg_style_system, LV_OPA_COVER);
+    lv_style_set_bg_color(&msg_style_system, lv_palette_lighten(LV_PALETTE_GREY, 2));
+    lv_style_set_radius(&msg_style_system, 14);
+}
+
+static String build_timestamp_string(void)
+{
+    char buf[32];
+    int year_two_digits = meshcom_settings.node_date_year % 100;
+    snprintf(buf, sizeof(buf), "%02i.%02i.%02i %02i:%02i",
+        meshcom_settings.node_date_day,
+        meshcom_settings.node_date_month,
+        year_two_digits,
+        meshcom_settings.node_date_hour,
+        meshcom_settings.node_date_minute);
+    return String(buf);
+}
+
+static bool is_numeric_string(const String &value)
+{
+    if(value.length() == 0)
+        return false;
+
+    for(size_t i = 0; i < value.length(); ++i)
+    {
+        if(!isDigit(value[i]))
+            return false;
+    }
+
+    return true;
+}
+
+static void init_msg_tab_bar(lv_obj_t *parent)
+{
+    msg_tab_bar = lv_obj_create(parent);
+    lv_obj_set_width(msg_tab_bar, lv_pct(100));
+    lv_obj_set_height(msg_tab_bar, 28);
+    lv_obj_align(msg_tab_bar, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_bg_opa(msg_tab_bar, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(msg_tab_bar, lv_palette_lighten(LV_PALETTE_GREY, 4), LV_PART_MAIN);
+    lv_obj_set_style_border_width(msg_tab_bar, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(msg_tab_bar, 6, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(msg_tab_bar, 4, LV_PART_MAIN);
+    lv_obj_set_style_pad_column(msg_tab_bar, 6, LV_PART_MAIN);
+    lv_obj_set_flex_flow(msg_tab_bar, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(msg_tab_bar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_scroll_dir(msg_tab_bar, LV_DIR_HOR);
+    lv_obj_set_scrollbar_mode(msg_tab_bar, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_add_flag(msg_tab_bar, LV_OBJ_FLAG_SCROLLABLE);
+
+    msg_tab_hint_label = lv_label_create(msg_tab_bar);
+    lv_label_set_text(msg_tab_hint_label, "No MSG groups");
+    lv_obj_set_style_text_color(msg_tab_hint_label, lv_palette_darken(LV_PALETTE_GREY, 1), LV_PART_MAIN);
+
+    msg_tab_entries.clear();
+    msg_active_tab_index = -1;
+    msg_tabs_update_hint();
+}
+
+static void msg_tabs_select_index(int index)
+{
+    if(msg_tab_entries.empty())
+    {
+        msg_active_tab_index = -1;
+        msg_list_show_hint("No messages yet");
+        return;
+    }
+
+    if(index < 0 || index >= (int)msg_tab_entries.size())
+        index = 0;
+
+    msg_active_tab_index = index;
+
+    for(size_t i = 0; i < msg_tab_entries.size(); ++i)
+    {
+        if(msg_tab_entries[i].button == NULL)
+            continue;
+
+        if((int)i == msg_active_tab_index)
+            lv_obj_add_state(msg_tab_entries[i].button, LV_STATE_CHECKED);
+        else
+            lv_obj_clear_state(msg_tab_entries[i].button, LV_STATE_CHECKED);
+    }
+
+    msg_render_active_tab();
+}
+
+static void msg_tabs_trim_history(std::vector<MsgBubble> &bubbles)
+{
+    if(bubbles.size() <= MSG_TAB_MAX_MESSAGES)
+        return;
+
+    size_t overflow = bubbles.size() - MSG_TAB_MAX_MESSAGES;
+    bubbles.erase(bubbles.begin(), bubbles.begin() + overflow);
+}
+
+static MsgTabEntry *msg_tabs_find_entry(const String &group, int *index_out)
+{
+    for(size_t i = 0; i < msg_tab_entries.size(); ++i)
+    {
+        if(msg_tab_entries[i].group.equalsIgnoreCase(group))
+        {
+            if(index_out != NULL)
+                *index_out = static_cast<int>(i);
+            return &msg_tab_entries[i];
+        }
+    }
+
+    return NULL;
+}
+
+static void msg_tab_button_event_cb(lv_event_t * e)
+{
+    if(lv_event_get_code(e) != LV_EVENT_CLICKED)
+        return;
+
+    lv_obj_t *btn = lv_event_get_target(e);
+    for(size_t i = 0; i < msg_tab_entries.size(); ++i)
+    {
+        if(msg_tab_entries[i].button == btn)
+        {
+            msg_tabs_select_index(static_cast<int>(i));
+            break;
+        }
+    }
+}
+
+static MsgTabEntry *msg_tabs_get_or_create_entry(const String &group, int *index_out)
+{
+    MsgTabEntry *entry = msg_tabs_find_entry(group, index_out);
+    if(entry != NULL)
+        return entry;
+
+    if(msg_tab_bar == NULL)
+        return NULL;
+
+    MsgTabEntry new_entry;
+    new_entry.group = group;
+    new_entry.button = lv_btn_create(msg_tab_bar);
+
+    lv_obj_set_style_bg_color(new_entry.button, lv_palette_lighten(LV_PALETTE_BLUE, 3), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(new_entry.button, lv_palette_main(LV_PALETTE_BLUE), LV_PART_MAIN | LV_STATE_CHECKED);
+    lv_obj_set_style_bg_opa(new_entry.button, LV_OPA_70, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(new_entry.button, LV_OPA_100, LV_PART_MAIN | LV_STATE_CHECKED);
+    lv_obj_set_style_border_width(new_entry.button, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(new_entry.button, 8, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(new_entry.button, 6, LV_PART_MAIN);
+    lv_obj_add_flag(new_entry.button, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
+    lv_obj_add_event_cb(new_entry.button, msg_tab_button_event_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *label = lv_label_create(new_entry.button);
+    lv_label_set_text(label, group.c_str());
+    lv_obj_center(label);
+
+    msg_tab_entries.push_back(new_entry);
+    if(index_out != NULL)
+        *index_out = static_cast<int>(msg_tab_entries.size() - 1);
+
+    msg_tabs_update_hint();
+
+    if(msg_active_tab_index < 0)
+        msg_tabs_select_index(static_cast<int>(msg_tab_entries.size() - 1));
+    else
+        msg_tabs_select_index(msg_active_tab_index);
+
+    return &msg_tab_entries.back();
+}
+
+static void msg_tabs_add_message(const String &group, const MsgBubble &bubble)
+{
+    String normalized = group;
+    normalized.trim();
+    if(normalized.length() == 0)
+        normalized = "MSG";
+
+    int index = -1;
+    MsgTabEntry *entry = msg_tabs_get_or_create_entry(normalized, &index);
+
+    if(entry == NULL)
+        return;
+
+    entry->bubbles.push_back(bubble);
+    msg_tabs_trim_history(entry->bubbles);
+
+    msg_tabs_select_index(index);
+}
+
+static void msg_render_active_tab(void)
+{
+    if(msg_list == NULL)
+        return;
+
+    if(msg_active_tab_index < 0 || msg_active_tab_index >= (int)msg_tab_entries.size())
+    {
+        msg_list_show_hint("No messages yet");
+        return;
+    }
+
+    const MsgTabEntry &entry = msg_tab_entries[msg_active_tab_index];
+
+    if(entry.bubbles.empty())
+    {
+        msg_list_show_hint("No messages in this conversation");
+        return;
+    }
+
+    msg_list_clear();
+
+    for(const MsgBubble &bubble : entry.bubbles)
+    {
+        msg_list_append_bubble(bubble);
+    }
+
+    lv_obj_t *last = lv_obj_get_child(msg_list, -1);
+    if(last != NULL)
+        lv_obj_scroll_to_view(last, LV_ANIM_OFF);
+}
+
+static void msg_list_append_bubble(const MsgBubble &bubble)
+{
+    if(msg_list == NULL)
+        return;
+
+    ensure_msg_styles();
+
+    lv_obj_t *wrapper = lv_obj_create(msg_list);
+    lv_obj_set_width(wrapper, lv_pct(100));
+    lv_obj_set_height(wrapper, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(wrapper, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(wrapper, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(wrapper, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_left(wrapper, 2, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(wrapper, 2, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(wrapper, 1, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(wrapper, 1, LV_PART_MAIN);
+    lv_obj_clear_flag(wrapper, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_coord_t screen_w = lv_disp_get_hor_res(NULL);
+    if(screen_w <= 0)
+        screen_w = 320; // default safeguard for sizing
+
+    lv_coord_t max_bubble_width = (screen_w * 85) / 100;
+    if(max_bubble_width < 80)
+        max_bubble_width = 80;
+
+    lv_coord_t content_max_width = max_bubble_width - 12; // allow for bubble padding
+    if(content_max_width < 40)
+        content_max_width = max_bubble_width;
+
+    lv_obj_t *bubble_obj = lv_obj_create(wrapper);
+    lv_obj_set_width(bubble_obj, LV_SIZE_CONTENT);
+    lv_obj_set_height(bubble_obj, LV_SIZE_CONTENT);
+    lv_obj_set_style_max_width(bubble_obj, max_bubble_width, LV_PART_MAIN);
+    lv_obj_set_style_border_width(bubble_obj, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(bubble_obj, 8, LV_PART_MAIN);
+    lv_obj_set_style_pad_row(bubble_obj, 4, LV_PART_MAIN);
+    lv_obj_clear_flag(bubble_obj, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(bubble_obj, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(bubble_obj, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+
+    const lv_style_t *style = &msg_style_incoming;
+    if(bubble.type == MsgBubbleType::Outgoing)
+        style = &msg_style_outgoing;
+    else if(bubble.type == MsgBubbleType::System)
+        style = &msg_style_system;
+    lv_obj_add_style(bubble_obj, const_cast<lv_style_t *>(style), LV_PART_MAIN);
+
+    if(bubble.type == MsgBubbleType::Outgoing)
+        lv_obj_align(bubble_obj, LV_ALIGN_TOP_RIGHT, 0, 0);
+    else
+        lv_obj_align(bubble_obj, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    lv_obj_t *header_row = lv_obj_create(bubble_obj);
+    lv_obj_set_width(header_row, content_max_width);
+    lv_obj_set_height(header_row, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(header_row, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(header_row, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(header_row, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_column(header_row, 4, LV_PART_MAIN);
+    lv_obj_clear_flag(header_row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(header_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(header_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    lv_obj_t *header = lv_label_create(header_row);
+    lv_label_set_text(header, bubble.header.c_str());
+    lv_obj_set_style_text_color(header, lv_palette_darken(LV_PALETTE_BLUE_GREY, 1), LV_PART_MAIN);
+    lv_label_set_long_mode(header, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(header, LV_SIZE_CONTENT);
+    lv_obj_set_style_max_width(header, content_max_width, LV_PART_MAIN);
+    lv_obj_set_flex_grow(header, 1);
+
+    if(bubble.timestamp.length() > 0)
+    {
+        lv_obj_t *time_label = lv_label_create(header_row);
+        lv_label_set_text(time_label, bubble.timestamp.c_str());
+        lv_obj_set_style_text_color(time_label, lv_palette_darken(LV_PALETTE_GREY, 1), LV_PART_MAIN);
+        lv_label_set_long_mode(time_label, LV_LABEL_LONG_CLIP);
+        lv_obj_set_width(time_label, LV_SIZE_CONTENT);
+        lv_obj_set_style_text_align(time_label, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
+    }
+
+    lv_obj_t *body = lv_label_create(bubble_obj);
+    lv_label_set_text(body, bubble.body.c_str());
+    lv_label_set_long_mode(body, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(body, content_max_width);
+    lv_obj_set_style_text_color(body, lv_color_black(), LV_PART_MAIN);
+
+    lv_obj_scroll_to_view(wrapper, LV_ANIM_OFF);
+}
+
+static void msg_tabs_clear_all(void)
+{
+    for(auto &entry : msg_tab_entries)
+    {
+        if(entry.button != NULL)
+        {
+            lv_obj_del(entry.button);
+            entry.button = NULL;
+        }
+    }
+
+    msg_tab_entries.clear();
+    msg_active_tab_index = -1;
+    msg_tabs_update_hint();
+    msg_list_show_hint("No messages yet");
+}
+
 static bool compute_maidenhead_locator(double lat, double lon, char *buffer, size_t len)
 {
     if(buffer == NULL || len < 9)
@@ -1709,10 +2136,14 @@ void tdeck_update_batt_label(float batt, int proz)
         }
     }
 
-    lv_label_set_text(btn_batt_label, vChar);
-    lv_label_set_text(btn_batt_label1, vChar);
-    lv_label_set_text(btn_batt_label2, vChar);
-    lv_label_set_text(btn_batt_label4, vChar);
+    if(btn_batt_label != NULL)
+        lv_label_set_text(btn_batt_label, vChar);
+    if(btn_batt_label1 != NULL)
+        lv_label_set_text(btn_batt_label1, vChar);
+    if(btn_batt_label2 != NULL)
+        lv_label_set_text(btn_batt_label2, vChar);
+    if(btn_batt_label4 != NULL)
+        lv_label_set_text(btn_batt_label4, vChar);
 
     update_header_batt_indicator(batt, proz);
     update_header_sat_indicator();
@@ -1732,10 +2163,14 @@ void tdeck_update_time_label()
         meshcom_settings.node_date_minute,
         meshcom_settings.node_date_second);
 
-    lv_label_set_text(btn_time_label, cTime);
-    lv_label_set_text(btn_time_label1, cTime);
-    lv_label_set_text(btn_time_label2, cTime);
-    lv_label_set_text(btn_time_label4, cTime);
+    if(btn_time_label != NULL)
+        lv_label_set_text(btn_time_label, cTime);
+    if(btn_time_label1 != NULL)
+        lv_label_set_text(btn_time_label1, cTime);
+    if(btn_time_label2 != NULL)
+        lv_label_set_text(btn_time_label2, cTime);
+    if(btn_time_label4 != NULL)
+        lv_label_set_text(btn_time_label4, cTime);
 
     if(header_time_label != NULL)
     {
@@ -1941,6 +2376,29 @@ void tdeck_refresh_SET_view()
 
 char ctrack[300];
 
+static void msg_focus_and_alert(bool bWithAudio)
+{
+    if(!meshcom_settings.node_keyboardlock)
+        tft_on();
+
+    if(tv != NULL)
+    {
+        int active = lv_tabview_get_tab_act(tv);
+        if(active != 1 && active != 7)
+        {
+            lv_tabview_set_act(tv, 0, LV_ANIM_OFF);
+        }
+    }
+
+    if(bWithAudio)
+    {
+        if (!play_file_from_sd_blocking(meshcom_settings.node_audio_msg.c_str(), 12))
+        {
+            play_cw_start();
+        }
+    }
+}
+
 /**
  * show GPS Posítion sent
  */
@@ -1952,6 +2410,21 @@ void tdeck_send_track_view()
         snprintf(ctrack, sizeof(ctrack), "\n\n\n\n        GPS\n   POSITION SENT\n");
 
     lv_textarea_set_text(track_ta, ctrack);
+}
+
+void tdeck_add_system_message(const char *text)
+{
+    if(text == NULL)
+        return;
+
+    MsgBubble bubble;
+    bubble.type = MsgBubbleType::System;
+    bubble.header = "System";
+    bubble.timestamp = build_timestamp_string();
+    bubble.body = String(text);
+
+    msg_tabs_add_message("SYSTEM", bubble);
+    msg_focus_and_alert(false);
 }
 
 /**
@@ -2059,15 +2532,46 @@ void tdeck_refresh_track_view()
  */
 void tdeck_add_MSG(aprsMessage aprsmsg, bool bWithAudio)
 {
-    int iackpos = aprsmsg.msg_payload.indexOf('{');
-    String strAscii = "";//aprsmsg.msg_payload;
+    String payload = aprsmsg.msg_payload;
+    int ack_pos = payload.indexOf('{');
+    if(ack_pos > 0)
+        payload = payload.substring(0, ack_pos);
 
-    if(iackpos > 0)
-        strAscii = utf8ascii(aprsmsg.msg_payload.substring(0, iackpos));
-    else
-        strAscii = utf8ascii(aprsmsg.msg_payload);
+    payload = utf8ascii(payload);
 
-    tdeck_add_MSG(aprsmsg.msg_destination_call, aprsmsg.msg_source_path, strAscii, bWithAudio);
+    String local_call = String(meshcom_settings.node_call);
+    bool is_outgoing = aprsmsg.msg_source_path.equalsIgnoreCase(local_call)
+        || aprsmsg.msg_source_call.equalsIgnoreCase(local_call);
+
+    String conversation = is_outgoing ? aprsmsg.msg_destination_call : aprsmsg.msg_source_call;
+    if(conversation.length() == 0)
+        conversation = is_outgoing ? aprsmsg.msg_destination_path : aprsmsg.msg_source_path;
+    conversation.trim();
+    if(conversation.length() == 0)
+        conversation = "MSG";
+
+    MsgBubble bubble;
+    bubble.type = is_outgoing ? MsgBubbleType::Outgoing : MsgBubbleType::Incoming;
+    bubble.timestamp = build_timestamp_string();
+
+    String source_descriptor = aprsmsg.msg_source_path.length() > 0 ? aprsmsg.msg_source_path : aprsmsg.msg_source_call;
+    String dest_descriptor = aprsmsg.msg_destination_path.length() > 0 ? aprsmsg.msg_destination_path : aprsmsg.msg_destination_call;
+
+    if(source_descriptor.length() == 0)
+        source_descriptor = local_call.length() > 0 ? local_call : String("You");
+    if(dest_descriptor.length() == 0)
+        dest_descriptor = conversation;
+
+    String tab_override = dest_descriptor;
+    tab_override.trim();
+    if(tab_override.equals("*") || is_numeric_string(tab_override))
+        conversation = tab_override;
+
+    bubble.header = source_descriptor + " -> " + dest_descriptor;
+    bubble.body = payload;
+
+    msg_tabs_add_message(conversation, bubble);
+    msg_focus_and_alert(bWithAudio);
 }                  
 
 /**
@@ -2075,58 +2579,39 @@ void tdeck_add_MSG(aprsMessage aprsmsg, bool bWithAudio)
  */
 void tdeck_add_MSG(String callsign, String path, String message, bool bWithAudio)
 {
-    char buf[256];
-
-    snprintf(buf, 256, "%02i:%02i %s>%s\n%s\n",
-        meshcom_settings.node_date_hour, 
-        meshcom_settings.node_date_minute, 
-        path.c_str(), callsign.c_str(), message.c_str());
-                                            
-    if (!meshcom_settings.node_keyboardlock)
+    String local_call = String(meshcom_settings.node_call);
+    String conversation = callsign;
+    conversation.trim();
+    if(conversation.length() == 0)
     {
-        tft_on();
+        conversation = path;
+        conversation.trim();
     }
+    if(conversation.length() == 0)
+        conversation = "MSG";
 
-    if (strlen(lv_textarea_get_text(text_ta)) + 200 >= lv_textarea_get_max_length(text_ta))
-    {
-        String strText_ta = lv_textarea_get_text(text_ta);
-        String strResttext_ta = "";
+    MsgBubble bubble;
+    bool is_outgoing = path.equalsIgnoreCase(local_call);
+    bubble.type = is_outgoing ? MsgBubbleType::Outgoing : MsgBubbleType::Incoming;
+    bubble.timestamp = build_timestamp_string();
 
-        int ixpc = 0;
-        int ixp=0;
-        for(ixp=0; ixp<strText_ta.length()+1; ixp++)
-        {
-            if(strText_ta.charAt(ixp) == 0x0a)
-            {
-                ixpc++;
-            }
-            
-            if(ixpc > 30)
-            {
-                strResttext_ta = strText_ta.substring(ixp+1);
-                break;
-            }
-        }
+    String header_source = path.length() > 0 ? path : (is_outgoing ? local_call : conversation);
+    String header_dest = callsign.length() > 0 ? callsign : conversation;
+    bubble.header = header_source;
+    if(header_dest.length() > 0)
+        bubble.header += " -> " + header_dest;
+    bubble.body = utf8ascii(message);
 
-        if(strResttext_ta.length() > 0)
-        {
-            lv_textarea_set_text(text_ta, strResttext_ta.c_str());
-        }
-    }
+    String tab_override = header_dest;
+    tab_override.trim();
+    if(tab_override.equals("*") || is_numeric_string(tab_override))
+        conversation = tab_override;
 
-    lv_textarea_add_text(text_ta, buf);
+    msg_tabs_add_message(conversation, bubble);
+    msg_focus_and_alert(bWithAudio);
+}
 
-    if (lv_tabview_get_tab_act(tv) != 1 && lv_tabview_get_tab_act(tv) != 7)
-    {
-        lv_tabview_set_act(tv, 0, LV_ANIM_OFF);
-    }
-
-    if(bWithAudio)
-    {
-        // play_sound
-        if (!play_file_from_sd_blocking(meshcom_settings.node_audio_msg.c_str(), 12))
-        {
-            play_cw_start();
-        }
-    }
+void tdeck_reset_msg_tabs(void)
+{
+    msg_tabs_clear_all();
 }

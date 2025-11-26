@@ -40,6 +40,8 @@ void tdeck_refresh_track_view();
 void tdeck_send_track_view();
 void tdeck_add_MSG(aprsMessage aprsmsg, bool bWithAudio);
 void tdeck_add_MSG(String callsign, String path, String message, bool bWithAudio);
+void tdeck_reset_msg_tabs();
+void tdeck_add_system_message(const char *text);
 
 void tdeck_hide_tab_menu();
 void tdeck_show_tab_menu();

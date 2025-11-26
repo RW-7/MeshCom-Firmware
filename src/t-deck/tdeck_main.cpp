@@ -224,7 +224,7 @@ bool setupSD()
  */
 void addMessage(const char *str)
 {
-    lv_textarea_add_text(text_ta, str);
+    tdeck_add_system_message(str);
     uint32_t run = millis() + 200;
     while (millis() < run)
     {
@@ -697,6 +697,6 @@ void tdeck_addMessage(bool bSuccess)
  */
 void tdeck_clear_text_ta()
 {
-    lv_textarea_set_text(text_ta, "");
+    tdeck_reset_msg_tabs();
 }
 

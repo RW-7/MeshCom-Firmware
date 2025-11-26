@@ -44,8 +44,6 @@ extern lv_obj_t    *setup_utc;
 
 extern lv_obj_t    *btn_msg_id_label;
 extern lv_obj_t    *btn_ack_id_label;
-
-extern lv_obj_t    *text_ta;
 extern lv_obj_t    *track_ta;
 
 extern lv_obj_t    *btn_time_label;

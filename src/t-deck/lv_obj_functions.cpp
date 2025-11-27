@@ -20,6 +20,7 @@
 #include <loop_functions_extern.h>
 #include <math.h>
 #include <cstring>
+#include <cctype>
 #include <vector>
 
 #include "event_functions.h"
@@ -159,6 +160,14 @@ static void msg_tabs_clear_all(void);
 static void msg_render_active_tab(void);
 static void msg_list_show_hint(const char *text);
 static void msg_list_append_bubble(const MsgBubble &bubble);
+
+struct HeaderEventData
+{
+    String header;
+    bool is_sender;
+};
+
+static void header_label_event_cb(lv_event_t * e);
 static void ensure_msg_styles(void);
 static String build_timestamp_string(void);
 static bool is_numeric_string(const String &value);
@@ -1158,14 +1167,12 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_obj_set_style_bg_opa(msg_controls, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_clear_flag(msg_controls, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* hide controls by default unless SND tab is active */
     if(lv_tabview_get_tab_act(tv) != 1)
         lv_obj_add_flag(msg_controls, LV_OBJ_FLAG_HIDDEN);
 
     dm_callsign = lv_textarea_create(msg_controls);
     lv_textarea_set_one_line(dm_callsign, true);
     lv_textarea_set_text_selection(dm_callsign, false);
-    /* keep callsign input position as-is (left/top inside the controls) */
     lv_obj_set_pos(dm_callsign, 6, 5);
     lv_obj_set_size(dm_callsign, 165, 30);
     lv_textarea_set_text(dm_callsign, "");
@@ -2024,13 +2031,40 @@ static void msg_list_append_bubble(const MsgBubble &bubble)
     lv_obj_set_flex_flow(header_row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(header_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
+    // Keep the original header text visually, but show '*' as 'Public' for the dest part.
+    String full_header = bubble.header;
+    int arrow_pos = full_header.indexOf("->");
+    String display_header = full_header;
+    if(arrow_pos != -1)
+    {
+        String left_part = full_header.substring(0, arrow_pos);
+        String right_part = full_header.substring(arrow_pos + 2);
+        left_part.trim();
+        right_part.trim();
+        if(right_part.equals("*"))
+        {
+            display_header = left_part + " -> Public"; // show Public instead of *
+        }
+    }
+
     lv_obj_t *header = lv_label_create(header_row);
-    lv_label_set_text(header, bubble.header.c_str());
+    lv_label_set_text(header, display_header.c_str());
     lv_obj_set_style_text_color(header, lv_palette_darken(LV_PALETTE_BLUE_GREY, 1), LV_PART_MAIN);
     lv_label_set_long_mode(header, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(header, LV_SIZE_CONTENT);
     lv_obj_set_style_max_width(header, content_max_width, LV_PART_MAIN);
     lv_obj_set_flex_grow(header, 1);
+    /* make header clickable so it receives pointer events */
+    lv_obj_add_flag(header, LV_OBJ_FLAG_CLICKABLE);
+
+    // Attach a single event callback. The callback will determine whether the user
+    // clicked the left (sender) or right (dest) half by comparing the pointer x
+    // coordinate to the label's screen midpoint.
+    HeaderEventData *hed = new HeaderEventData();
+    hed->header = full_header;
+    hed->is_sender = false; // not used for single-label mode
+    lv_obj_add_event_cb(header, header_label_event_cb, LV_EVENT_CLICKED, hed);
+    lv_obj_add_event_cb(header, header_label_event_cb, LV_EVENT_DELETE, hed);
 
     if(bubble.timestamp.length() > 0)
     {
@@ -2049,6 +2083,91 @@ static void msg_list_append_bubble(const MsgBubble &bubble)
     lv_obj_set_style_text_color(body, lv_color_black(), LV_PART_MAIN);
 
     lv_obj_scroll_to_view(wrapper, LV_ANIM_OFF);
+}
+
+static void header_label_event_cb(lv_event_t * e)
+{
+    HeaderEventData *data = (HeaderEventData *)lv_event_get_user_data(e);
+    if(data == NULL)
+        return;
+
+    lv_event_code_t code = lv_event_get_code(e);
+    if(code == LV_EVENT_DELETE)
+    {
+        delete data;
+        return;
+    }
+
+    if(code != LV_EVENT_CLICKED)
+        return;
+
+    // Determine click position relative to the label to decide sender vs dest
+    lv_obj_t *target = lv_event_get_target(e);
+    lv_indev_t *indev = lv_indev_get_act();
+    lv_point_t pt;
+    bool clicked_left = false;
+    if(indev != NULL)
+    {
+        lv_indev_get_point(indev, &pt);
+        lv_area_t area;
+        lv_obj_get_coords(target, &area);
+        lv_coord_t midx = (area.x1 + area.x2) / 2;
+        clicked_left = (pt.x <= midx);
+    }
+
+    String hdr = data->header;
+    int arrow = hdr.indexOf("->");
+    String left = hdr;
+    String right = "";
+    if(arrow != -1)
+    {
+        left = hdr.substring(0, arrow);
+        right = hdr.substring(arrow + 2);
+    }
+    left.trim();
+    right.trim();
+
+    if(clicked_left)
+    {
+        int comma = left.indexOf(',');
+        String sender = left;
+        if(comma != -1)
+            sender = left.substring(0, comma);
+        sender.trim();
+        if(dm_callsign != NULL)
+            lv_textarea_set_text(dm_callsign, sender.c_str());
+        // Switch to SND tab (tab index 1)
+        if(tv != NULL)
+            lv_tabview_set_act(tv, 1, LV_ANIM_OFF);
+    }
+    else
+    {
+        int comma = right.indexOf(',');
+        String token = right;
+        if(comma != -1)
+            token = right.substring(0, comma);
+        token.trim();
+
+        // If dest is '*' show Public visually but clicking dest should leave dm_callsign empty
+        if(token.equals("*"))
+        {
+            if(dm_callsign != NULL)
+                lv_textarea_set_text(dm_callsign, "");
+        }
+        else if(token.length() == 0)
+        {
+            if(dm_callsign != NULL)
+                lv_textarea_set_text(dm_callsign, "");
+        }
+        else
+        {
+            if(dm_callsign != NULL)
+                lv_textarea_set_text(dm_callsign, token.c_str());
+        }
+        // Switch to SND tab (tab index 1)
+        if(tv != NULL)
+            lv_tabview_set_act(tv, 1, LV_ANIM_OFF);
+    }
 }
 
 static void msg_tabs_clear_all(void)

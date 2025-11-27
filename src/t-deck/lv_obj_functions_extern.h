@@ -3,9 +3,10 @@
  * @brief       external used variables for lv_obj_functions
  * @author      Ing. Jakob Gurnhofer (OE3GJC)
  * @author      Ing. Kurt Baumann (OE1KBC)
+ * @author      Ralph Weich (DD5RW)
  * @license     MIT
  * @copyright   Copyright (c) 2025 ICSSW.org
- * @date        2025-03-24
+ * @date        2025-11-28
  */
 
 #ifndef _LV_OBJ_FUNCTIONS_EXTERN_H_

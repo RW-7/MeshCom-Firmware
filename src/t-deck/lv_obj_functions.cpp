@@ -3,9 +3,10 @@
  * @brief       object functions for lvgl
  * @author      Ing. Jakob Gurnhofer (OE3GJC)
  * @author      Ing. Kurt Baumann (OE1KBC)
+ * @author      Ralph Weich (DD5RW)
  * @license     MIT
  * @copyright   Copyright (c) 2025 ICSSW.org
- * @date        2025-03-24
+ * @date        2025-11-28
  */
 
 #include "lv_obj_functions.h"
@@ -1148,7 +1149,6 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_obj_set_size(text_input, 300, LV_VER_RES * 0.5);
     lv_textarea_set_text(text_input, "");
     lv_textarea_set_max_length(text_input, 150);
-    /* restore original main message position */
     lv_obj_align(text_input, LV_ALIGN_TOP_MID, 0, 0);
     lv_obj_add_style(text_input, &ta_input_style, LV_PART_MAIN);
     lv_obj_add_style(text_input, &ta_input_cursor, LV_PART_SELECTED | LV_PART_CURSOR);
@@ -2031,7 +2031,6 @@ static void msg_list_append_bubble(const MsgBubble &bubble)
     lv_obj_set_flex_flow(header_row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(header_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-    // Keep the original header text visually, but show '*' as 'Public' for the dest part.
     String full_header = bubble.header;
     int arrow_pos = full_header.indexOf("->");
     String display_header = full_header;
@@ -2054,15 +2053,11 @@ static void msg_list_append_bubble(const MsgBubble &bubble)
     lv_obj_set_width(header, LV_SIZE_CONTENT);
     lv_obj_set_style_max_width(header, content_max_width, LV_PART_MAIN);
     lv_obj_set_flex_grow(header, 1);
-    /* make header clickable so it receives pointer events */
-    lv_obj_add_flag(header, LV_OBJ_FLAG_CLICKABLE);
 
-    // Attach a single event callback. The callback will determine whether the user
-    // clicked the left (sender) or right (dest) half by comparing the pointer x
-    // coordinate to the label's screen midpoint.
+    lv_obj_add_flag(header, LV_OBJ_FLAG_CLICKABLE);
     HeaderEventData *hed = new HeaderEventData();
     hed->header = full_header;
-    hed->is_sender = false; // not used for single-label mode
+    hed->is_sender = false;
     lv_obj_add_event_cb(header, header_label_event_cb, LV_EVENT_CLICKED, hed);
     lv_obj_add_event_cb(header, header_label_event_cb, LV_EVENT_DELETE, hed);
 
@@ -2101,7 +2096,6 @@ static void header_label_event_cb(lv_event_t * e)
     if(code != LV_EVENT_CLICKED)
         return;
 
-    // Determine click position relative to the label to decide sender vs dest
     lv_obj_t *target = lv_event_get_target(e);
     lv_indev_t *indev = lv_indev_get_act();
     lv_point_t pt;
@@ -2136,7 +2130,6 @@ static void header_label_event_cb(lv_event_t * e)
         sender.trim();
         if(dm_callsign != NULL)
             lv_textarea_set_text(dm_callsign, sender.c_str());
-        // Switch to SND tab (tab index 1)
         if(tv != NULL)
             lv_tabview_set_act(tv, 1, LV_ANIM_OFF);
     }
@@ -2148,7 +2141,6 @@ static void header_label_event_cb(lv_event_t * e)
             token = right.substring(0, comma);
         token.trim();
 
-        // If dest is '*' show Public visually but clicking dest should leave dm_callsign empty
         if(token.equals("*"))
         {
             if(dm_callsign != NULL)
@@ -2164,7 +2156,7 @@ static void header_label_event_cb(lv_event_t * e)
             if(dm_callsign != NULL)
                 lv_textarea_set_text(dm_callsign, token.c_str());
         }
-        // Switch to SND tab (tab index 1)
+
         if(tv != NULL)
             lv_tabview_set_act(tv, 1, LV_ANIM_OFF);
     }
@@ -2242,9 +2234,7 @@ static bool compute_maidenhead_locator(double lat, double lon, char *buffer, siz
 }
 
 
-/**
- * update the battery label
- */
+
 void tdeck_update_batt_label(float batt, int proz)
 {
     char vChar[35];

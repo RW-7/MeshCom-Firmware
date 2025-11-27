@@ -3,9 +3,10 @@
  * @brief       general functions for T-Deck
  * @author      Ing. Jakob Gurnhofer (OE3GJC)
  * @author      Ing. Kurt Baumann (OE1KBC)
+ * @author      Ralph Weich (DD5RW)
  * @license     MIT
  * @copyright   Copyright (c) 2025 ICSSW.org
- * @date        2025-03-24
+ * @date        2025-11-28
  */
 #include <configuration.h>
 #include <debugconf.h>
@@ -475,6 +476,51 @@ static void keypad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
             else
             if(act_key == 0x6d)
                 act_key = 0x2e;
+        }
+        else if(iKeyBoardType == 4)
+        {
+            if(act_key >= 0x61 && act_key <= 0x7a)
+            {
+                // Index 0..25 corresponds to 'a'..'z'.
+                static const char sym_map[26] = {
+                    '*', // a
+                    '!', // b
+                    '9', // c -> changed to '9'
+                    '5', // d -> changed to '5'
+                    '2', // e -> changed to '2'
+                    '6', // f -> changed to '6'
+                    '/', // g  (changed to '/')
+                    ':', // h  (changed to ':')
+                    '-', // i  (changed to '-')
+                    ';', // j  (changed to ';')
+                    ',', // k  (changed to ',')
+                    '"',// l
+                    '.', // m
+                    ',', // n
+                    '+', // o  (changed to '+')
+                    '@', // p
+                    '#', // q
+                    '3', // r
+                    '4', // s
+                    '(', // t  (changed to '(')
+                    '_', // u  (changed to '_')
+                    '?', // v
+                    '1', // w
+                    '8', // x
+                    ')', // y  (changed to ')')
+                    '7'  // z
+                };
+
+                act_key = (uint32_t)sym_map[act_key - 0x61];
+            }
+            else
+            {
+                // keep dot/comma mapping too
+                if(act_key == 0x6d)
+                    act_key = 0x2e;
+                else if(act_key == 0x6e)
+                    act_key = 0x2c;
+            }
         }
     
         if(bDEBUG)

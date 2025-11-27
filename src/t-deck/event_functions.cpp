@@ -766,6 +766,14 @@ void tabview_event_cb(lv_event_t * e)
                 break;
         }
 
+        if(msg_controls != NULL) {
+            if(tab_idx == 1) {
+                lv_obj_clear_flag(msg_controls, LV_OBJ_FLAG_HIDDEN);
+            } else {
+                lv_obj_add_flag(msg_controls, LV_OBJ_FLAG_HIDDEN);
+            }
+        }
+
         tdeck_hide_tab_menu();
     }
 }

@@ -61,6 +61,7 @@ extern lv_obj_t    *mheard_ta;
 extern lv_obj_t    *path_ta;
 extern lv_obj_t    *tv;
 extern lv_obj_t    *dm_callsign;
+extern lv_obj_t    *msg_controls;
 extern lv_obj_t    *dropdown_aprs;
 extern lv_obj_t    *dropdown_country;
 extern lv_obj_t    *dropdown_mapselect;

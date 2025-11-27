@@ -85,6 +85,7 @@ lv_obj_t    *mheard_ta;
 lv_obj_t    *path_ta;
 lv_obj_t    *tv;
 lv_obj_t    *dm_callsign;
+lv_obj_t    *msg_controls;
 lv_obj_t    *dropdown_aprs;
 lv_obj_t    *dropdown_country;
 lv_obj_t    *dropdown_mapselect;
@@ -368,10 +369,10 @@ void setDisplayLayout(lv_obj_t *parent)
     }
 
     lv_obj_t *t2 = lv_tabview_add_tab(tv, LV_SYMBOL_ENVELOPE);
-    lv_obj_t *t5 = lv_tabview_add_tab(tv, "SND");
+    lv_obj_t *t5 = lv_tabview_add_tab(tv, LV_SYMBOL_KEYBOARD);
     lv_obj_t *t3 = lv_tabview_add_tab(tv, "POS");
-    lv_obj_t *t7 = lv_tabview_add_tab(tv, "MAP");
-    lv_obj_t *t6 = lv_tabview_add_tab(tv, "GPS");
+    lv_obj_t *t7 = lv_tabview_add_tab(tv, LV_SYMBOL_IMAGE);
+    lv_obj_t *t6 = lv_tabview_add_tab(tv, LV_SYMBOL_GPS);
     lv_obj_t *t4 = lv_tabview_add_tab(tv, "MHD");
     lv_obj_t *t8 = lv_tabview_add_tab(tv, "PATH");
     lv_obj_t *t1 = lv_tabview_add_tab(tv, LV_SYMBOL_SETTINGS);
@@ -1138,55 +1139,68 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_obj_set_size(text_input, 300, LV_VER_RES * 0.5);
     lv_textarea_set_text(text_input, "");
     lv_textarea_set_max_length(text_input, 150);
+    /* restore original main message position */
     lv_obj_align(text_input, LV_ALIGN_TOP_MID, 0, 0);
     lv_obj_add_style(text_input, &ta_input_style, LV_PART_MAIN);
     lv_obj_add_style(text_input, &ta_input_cursor, LV_PART_SELECTED | LV_PART_CURSOR);
 
-    lv_obj_t * btndm_callsign = lv_btn_create(t5);
-    lv_obj_set_pos(btndm_callsign, 0, 130);
-    lv_obj_set_size(btndm_callsign, 30, 27);
+    lv_textarea_set_placeholder_text(text_input, "Type Message");
 
-    lv_obj_t * label_btndm_callsign = lv_label_create(btndm_callsign);
-    lv_label_set_text(label_btndm_callsign, "DM");
-    lv_obj_center(label_btndm_callsign);
+    msg_controls = lv_obj_create(t5);
+    lv_obj_set_size(msg_controls, screen_w, 40);
+    /* restore original alignment for the controls container */
+    lv_obj_align(msg_controls, LV_ALIGN_BOTTOM_MID, 0, -4);
+    /* make sure the container itself doesn't draw a visible frame */
+    lv_obj_set_style_bg_opa(msg_controls, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(msg_controls, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(msg_controls, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(msg_controls, 0, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(msg_controls, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_clear_flag(msg_controls, LV_OBJ_FLAG_SCROLLABLE);
 
-    dm_callsign = lv_textarea_create(t5);
+    /* hide controls by default unless SND tab is active */
+    if(lv_tabview_get_tab_act(tv) != 1)
+        lv_obj_add_flag(msg_controls, LV_OBJ_FLAG_HIDDEN);
+
+    dm_callsign = lv_textarea_create(msg_controls);
     lv_textarea_set_one_line(dm_callsign, true);
     lv_textarea_set_text_selection(dm_callsign, false);
-    lv_obj_align(dm_callsign, LV_ALIGN_TOP_LEFT, 0, 0);
-    lv_obj_set_pos(dm_callsign, 30, 130);
-    lv_obj_set_size(dm_callsign, 100, 30);
+    /* keep callsign input position as-is (left/top inside the controls) */
+    lv_obj_set_pos(dm_callsign, 6, 5);
+    lv_obj_set_size(dm_callsign, 165, 30);
     lv_textarea_set_text(dm_callsign, "");
     lv_textarea_set_max_length(dm_callsign, 9);
     lv_obj_add_style(dm_callsign, &ta_style, LV_PART_MAIN);
     lv_obj_add_style(dm_callsign, &ta_input_cursor, LV_PART_CURSOR | LV_STATE_FOCUSED);
     lv_textarea_set_accepted_chars(dm_callsign, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-");
+    lv_textarea_set_placeholder_text(dm_callsign, "To Call or Group");
+    lv_obj_clear_flag(dm_callsign, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t * btn = lv_btn_create(t5);           /*Add a button the current screen*/
-    lv_obj_set_pos(btn, 170, 130);                            /*Set its position*/
-    lv_obj_set_size(btn, 50, 27);                          /*Set its size*/
+    lv_obj_t * btn = lv_btn_create(msg_controls);
+    lv_obj_set_pos(btn, 180, 5);
+    lv_obj_set_size(btn, 50, 30);
     lv_obj_add_event_cb(btn, btn_event_handler_send, LV_EVENT_ALL, NULL);
 
-    lv_obj_t * btnlabel = lv_label_create(btn);          /*Add a label to the button*/
-    lv_label_set_text(btnlabel, "send");                     /*Set the labels text*/
+    lv_obj_t * btnlabel = lv_label_create(btn);
+    lv_label_set_text(btnlabel, LV_SYMBOL_RIGHT);
     lv_obj_center(btnlabel);
 
-    lv_obj_t * btnup = lv_btn_create(t5);
-    lv_obj_set_pos(btnup, 225, 130);
-    lv_obj_set_size(btnup, 35, 27);
+    lv_obj_t * btnup = lv_btn_create(msg_controls);
+    lv_obj_set_pos(btnup, 235, 5);
+    lv_obj_set_size(btnup, 35, 30);
     lv_obj_add_event_cb(btnup, btn_event_handler_up, LV_EVENT_ALL, NULL);
 
     btnlabelup = lv_label_create(btnup);
     lv_label_set_text(btnlabelup, "abc");
     lv_obj_center(btnlabelup);
 
-    lv_obj_t * btnc = lv_btn_create(t5);
-    lv_obj_set_pos(btnc, 265, 130);
-    lv_obj_set_size(btnc, 35, 27);
+    lv_obj_t * btnc = lv_btn_create(msg_controls);
+    lv_obj_set_pos(btnc, 275, 5);
+    lv_obj_set_size(btnc, 35, 30);
     lv_obj_add_event_cb(btnc, btn_event_handler_clear, LV_EVENT_ALL, NULL);
 
     lv_obj_t * btnlabelc = lv_label_create(btnc);
-    lv_label_set_text(btnlabelc, "clear");
+    lv_label_set_text(btnlabelc, LV_SYMBOL_TRASH);
     lv_obj_center(btnlabelc);
 }
 

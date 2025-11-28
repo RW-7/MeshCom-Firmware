@@ -430,6 +430,7 @@ static void keypad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
     static uint32_t last_key = 0;
     uint32_t act_key ;
     act_key = keypad_get_key();
+    uint32_t raw_key = act_key; // keep raw value for debug output
     if (act_key != 0)
     {
         if(iKeyBoardType == 2)
@@ -482,7 +483,6 @@ static void keypad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
             if(act_key >= 0x61 && act_key <= 0x7a)
             {
                 // Index 0..25 corresponds to 'a'..'z'.
-                // Values taken from Keyboard_ESP32C3.ino keyboard_symbol matrix
                 static const char sym_map[26] = {
                     '*', // a  -> keyboard_symbol[0][3]
                     '!', // b  -> keyboard_symbol[3][4]
@@ -524,8 +524,11 @@ static void keypad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
             }
         }
     
-        if(bDEBUG)
-            Serial.printf("Key pressed : iKeyBoardType:%i 0x%x\n", iKeyBoardType, act_key);
+        // Print detailed debug info: raw keycode and mapped output
+        {
+            char mapped_char = (act_key >= 32 && act_key <= 126) ? (char)act_key : '.';
+            Serial.printf("KB RAW=0x%02X MODE=%d MAPPED=0x%02X '%c'\n", (unsigned)raw_key, iKeyBoardType, (unsigned)act_key, mapped_char);
+        }
 
         if(!meshcom_settings.node_keyboardlock)
             tft_on();

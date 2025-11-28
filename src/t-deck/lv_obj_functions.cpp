@@ -28,7 +28,7 @@
 #include <lora_setchip.h>
 
 #include <esp32/esp32_flash.h>
-#include <LittleFS.h>
+#include <SPIFFS.h>
 
 #if defined(ENABLE_AUDIO)
 #include <esp32/esp32_audio.h>
@@ -2390,14 +2390,14 @@ static void save_persisted_messages(void)
     if(persisted_msgs.empty())
         return;
 
-    if(!LittleFS.begin(true))
+    if(!SPIFFS.begin(true))
     {
-        Serial.println("[MSG] LittleFS begin failed (save)");
+        Serial.println("[MSG] SPIFFS begin failed (save)");
         return;
     }
 
     const char *tmp = "/messages.jsonl.tmp";
-    File f = LittleFS.open(tmp, FILE_WRITE);
+    File f = SPIFFS.open(tmp, FILE_WRITE);
     if(!f)
     {
         Serial.println("[MSG] Failed to open temp messages file for writing");
@@ -2426,11 +2426,11 @@ static void save_persisted_messages(void)
     f.close();
 
     // rename tmp -> final
-    if(LittleFS.exists(PERSISTED_MSG_FILE))
-        LittleFS.remove(PERSISTED_MSG_FILE);
-    LittleFS.rename(tmp, PERSISTED_MSG_FILE);
+    if(SPIFFS.exists(PERSISTED_MSG_FILE))
+        SPIFFS.remove(PERSISTED_MSG_FILE);
+    SPIFFS.rename(tmp, PERSISTED_MSG_FILE);
 
-    LittleFS.end();
+    SPIFFS.end();
     // update flush timestamp and reset unsaved counter
     last_flush_millis = millis();
     unsaved_msgs_count = 0;
@@ -2441,21 +2441,21 @@ static void load_persisted_messages(void)
     persisted_msgs.clear();
     loading_messages_from_file = true;
 
-    if(!LittleFS.begin(true))
+    if(!SPIFFS.begin(true))
     {
-        Serial.println("[MSG] LittleFS begin failed (load)");
+        Serial.println("[MSG] SPIFFS begin failed (load)");
         loading_messages_from_file = false;
         return;
     }
 
-    if(!LittleFS.exists(PERSISTED_MSG_FILE))
+    if(!SPIFFS.exists(PERSISTED_MSG_FILE))
     {
-        LittleFS.end();
+        SPIFFS.end();
         loading_messages_from_file = false;
         return;
     }
 
-    File f = LittleFS.open(PERSISTED_MSG_FILE, FILE_READ);
+    File f = SPIFFS.open(PERSISTED_MSG_FILE, FILE_READ);
     if(!f)
     {
         Serial.println("[MSG] Failed to open messages file for reading");
@@ -2519,7 +2519,7 @@ static void load_persisted_messages(void)
     }
 
     f.close();
-    LittleFS.end();
+    SPIFFS.end();
 
     // populate msg_tab_entries with loaded messages
     for(const auto &p : persisted_msgs)

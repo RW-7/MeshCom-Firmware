@@ -3,9 +3,10 @@
  * @brief       external used variables for lv_obj_functions
  * @author      Ing. Jakob Gurnhofer (OE3GJC)
  * @author      Ing. Kurt Baumann (OE1KBC)
+ * @author      Ralph Weich (DD5RW)
  * @license     MIT
  * @copyright   Copyright (c) 2025 ICSSW.org
- * @date        2025-03-24
+ * @date        2025-11-28
  */
 
 #ifndef _LV_OBJ_FUNCTIONS_EXTERN_H_
@@ -61,6 +62,7 @@ extern lv_obj_t    *mheard_ta;
 extern lv_obj_t    *path_ta;
 extern lv_obj_t    *tv;
 extern lv_obj_t    *dm_callsign;
+extern lv_obj_t    *msg_controls;
 extern lv_obj_t    *dropdown_aprs;
 extern lv_obj_t    *dropdown_country;
 extern lv_obj_t    *dropdown_mapselect;

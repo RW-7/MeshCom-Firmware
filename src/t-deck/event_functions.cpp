@@ -3,9 +3,10 @@
  * @brief       functions for handling events
  * @author      Ing. Jakob Gurnhofer (OE3GJC)
  * @author      Ing. Kurt Baumann (OE1KBC)
+ * @author      Ralph Weich (DD5RW)
  * @license     MIT
  * @copyright   Copyright (c) 2025 ICSSW.org
- * @date        2025-03-24
+ * @date       2025-11-28
  */
 
 #include <configuration.h>
@@ -656,7 +657,7 @@ void btn_event_handler_up(lv_event_t * e)
             Serial.println("up Clicked");
 
         iKeyBoardType++;
-        if(iKeyBoardType>3)
+        if(iKeyBoardType>4)
             iKeyBoardType=1;
         
         if(iKeyBoardType == 1)
@@ -672,6 +673,11 @@ void btn_event_handler_up(lv_event_t * e)
         if(iKeyBoardType == 3)
         {
             lv_label_set_text(btnlabelup, "123");
+        }
+        else
+        if(iKeyBoardType == 4)
+        {
+            lv_label_set_text(btnlabelup, "sym");
         }
 
         lv_group_focus_obj(text_input);
@@ -764,6 +770,14 @@ void tabview_event_cb(lv_event_t * e)
             case 7: // SET
                 tdeck_refresh_SET_view();
                 break;
+        }
+
+        if(msg_controls != NULL) {
+            if(tab_idx == 1) {
+                lv_obj_clear_flag(msg_controls, LV_OBJ_FLAG_HIDDEN);
+            } else {
+                lv_obj_add_flag(msg_controls, LV_OBJ_FLAG_HIDDEN);
+            }
         }
 
         tdeck_hide_tab_menu();

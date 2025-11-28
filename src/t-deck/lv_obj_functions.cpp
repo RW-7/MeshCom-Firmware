@@ -3,9 +3,10 @@
  * @brief       object functions for lvgl
  * @author      Ing. Jakob Gurnhofer (OE3GJC)
  * @author      Ing. Kurt Baumann (OE1KBC)
+ * @author      Ralph Weich (DD5RW)
  * @license     MIT
  * @copyright   Copyright (c) 2025 ICSSW.org
- * @date        2025-03-24
+ * @date        2025-11-28
  */
 
 #include "lv_obj_functions.h"
@@ -20,6 +21,7 @@
 #include <loop_functions_extern.h>
 #include <math.h>
 #include <cstring>
+#include <cctype>
 #include <vector>
 
 #include "event_functions.h"
@@ -85,6 +87,7 @@ lv_obj_t    *mheard_ta;
 lv_obj_t    *path_ta;
 lv_obj_t    *tv;
 lv_obj_t    *dm_callsign;
+lv_obj_t    *msg_controls;
 lv_obj_t    *dropdown_aprs;
 lv_obj_t    *dropdown_country;
 lv_obj_t    *dropdown_mapselect;
@@ -158,6 +161,14 @@ static void msg_tabs_clear_all(void);
 static void msg_render_active_tab(void);
 static void msg_list_show_hint(const char *text);
 static void msg_list_append_bubble(const MsgBubble &bubble);
+
+struct HeaderEventData
+{
+    String header;
+    bool is_sender;
+};
+
+static void header_label_event_cb(lv_event_t * e);
 static void ensure_msg_styles(void);
 static String build_timestamp_string(void);
 static bool is_numeric_string(const String &value);
@@ -368,10 +379,10 @@ void setDisplayLayout(lv_obj_t *parent)
     }
 
     lv_obj_t *t2 = lv_tabview_add_tab(tv, LV_SYMBOL_ENVELOPE);
-    lv_obj_t *t5 = lv_tabview_add_tab(tv, "SND");
+    lv_obj_t *t5 = lv_tabview_add_tab(tv, LV_SYMBOL_KEYBOARD);
     lv_obj_t *t3 = lv_tabview_add_tab(tv, "POS");
-    lv_obj_t *t7 = lv_tabview_add_tab(tv, "MAP");
-    lv_obj_t *t6 = lv_tabview_add_tab(tv, "GPS");
+    lv_obj_t *t7 = lv_tabview_add_tab(tv, LV_SYMBOL_IMAGE);
+    lv_obj_t *t6 = lv_tabview_add_tab(tv, LV_SYMBOL_GPS);
     lv_obj_t *t4 = lv_tabview_add_tab(tv, "MHD");
     lv_obj_t *t8 = lv_tabview_add_tab(tv, "PATH");
     lv_obj_t *t1 = lv_tabview_add_tab(tv, LV_SYMBOL_SETTINGS);
@@ -1142,51 +1153,61 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_obj_add_style(text_input, &ta_input_style, LV_PART_MAIN);
     lv_obj_add_style(text_input, &ta_input_cursor, LV_PART_SELECTED | LV_PART_CURSOR);
 
-    lv_obj_t * btndm_callsign = lv_btn_create(t5);
-    lv_obj_set_pos(btndm_callsign, 0, 130);
-    lv_obj_set_size(btndm_callsign, 30, 27);
+    lv_textarea_set_placeholder_text(text_input, "Type Message");
 
-    lv_obj_t * label_btndm_callsign = lv_label_create(btndm_callsign);
-    lv_label_set_text(label_btndm_callsign, "DM");
-    lv_obj_center(label_btndm_callsign);
+    msg_controls = lv_obj_create(t5);
+    lv_obj_set_size(msg_controls, screen_w, 40);
+    /* restore original alignment for the controls container */
+    lv_obj_align(msg_controls, LV_ALIGN_BOTTOM_MID, 0, -4);
+    /* make sure the container itself doesn't draw a visible frame */
+    lv_obj_set_style_bg_opa(msg_controls, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(msg_controls, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(msg_controls, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(msg_controls, 0, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(msg_controls, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_clear_flag(msg_controls, LV_OBJ_FLAG_SCROLLABLE);
 
-    dm_callsign = lv_textarea_create(t5);
+    if(lv_tabview_get_tab_act(tv) != 1)
+        lv_obj_add_flag(msg_controls, LV_OBJ_FLAG_HIDDEN);
+
+    dm_callsign = lv_textarea_create(msg_controls);
     lv_textarea_set_one_line(dm_callsign, true);
     lv_textarea_set_text_selection(dm_callsign, false);
-    lv_obj_align(dm_callsign, LV_ALIGN_TOP_LEFT, 0, 0);
-    lv_obj_set_pos(dm_callsign, 30, 130);
-    lv_obj_set_size(dm_callsign, 100, 30);
+    lv_obj_set_pos(dm_callsign, 6, 5);
+    lv_obj_set_size(dm_callsign, 165, 30);
     lv_textarea_set_text(dm_callsign, "");
     lv_textarea_set_max_length(dm_callsign, 9);
     lv_obj_add_style(dm_callsign, &ta_style, LV_PART_MAIN);
     lv_obj_add_style(dm_callsign, &ta_input_cursor, LV_PART_CURSOR | LV_STATE_FOCUSED);
     lv_textarea_set_accepted_chars(dm_callsign, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-");
+    lv_textarea_set_placeholder_text(dm_callsign, "To Call or Group");
+    lv_obj_clear_flag(dm_callsign, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t * btn = lv_btn_create(t5);           /*Add a button the current screen*/
-    lv_obj_set_pos(btn, 170, 130);                            /*Set its position*/
-    lv_obj_set_size(btn, 50, 27);                          /*Set its size*/
+    lv_obj_t * btn = lv_btn_create(msg_controls);
+    lv_obj_set_pos(btn, 180, 5);
+    lv_obj_set_size(btn, 50, 30);
     lv_obj_add_event_cb(btn, btn_event_handler_send, LV_EVENT_ALL, NULL);
 
-    lv_obj_t * btnlabel = lv_label_create(btn);          /*Add a label to the button*/
-    lv_label_set_text(btnlabel, "send");                     /*Set the labels text*/
+    lv_obj_t * btnlabel = lv_label_create(btn);
+    lv_label_set_text(btnlabel, LV_SYMBOL_RIGHT);
     lv_obj_center(btnlabel);
 
-    lv_obj_t * btnup = lv_btn_create(t5);
-    lv_obj_set_pos(btnup, 225, 130);
-    lv_obj_set_size(btnup, 35, 27);
+    lv_obj_t * btnup = lv_btn_create(msg_controls);
+    lv_obj_set_pos(btnup, 235, 5);
+    lv_obj_set_size(btnup, 35, 30);
     lv_obj_add_event_cb(btnup, btn_event_handler_up, LV_EVENT_ALL, NULL);
 
     btnlabelup = lv_label_create(btnup);
     lv_label_set_text(btnlabelup, "abc");
     lv_obj_center(btnlabelup);
 
-    lv_obj_t * btnc = lv_btn_create(t5);
-    lv_obj_set_pos(btnc, 265, 130);
-    lv_obj_set_size(btnc, 35, 27);
+    lv_obj_t * btnc = lv_btn_create(msg_controls);
+    lv_obj_set_pos(btnc, 275, 5);
+    lv_obj_set_size(btnc, 35, 30);
     lv_obj_add_event_cb(btnc, btn_event_handler_clear, LV_EVENT_ALL, NULL);
 
     lv_obj_t * btnlabelc = lv_label_create(btnc);
-    lv_label_set_text(btnlabelc, "clear");
+    lv_label_set_text(btnlabelc, LV_SYMBOL_TRASH);
     lv_obj_center(btnlabelc);
 }
 
@@ -2010,13 +2031,35 @@ static void msg_list_append_bubble(const MsgBubble &bubble)
     lv_obj_set_flex_flow(header_row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(header_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
+    String full_header = bubble.header;
+    int arrow_pos = full_header.indexOf("->");
+    String display_header = full_header;
+    if(arrow_pos != -1)
+    {
+        String left_part = full_header.substring(0, arrow_pos);
+        String right_part = full_header.substring(arrow_pos + 2);
+        left_part.trim();
+        right_part.trim();
+        if(right_part.equals("*"))
+        {
+            display_header = left_part + " -> Public"; // show Public instead of *
+        }
+    }
+
     lv_obj_t *header = lv_label_create(header_row);
-    lv_label_set_text(header, bubble.header.c_str());
+    lv_label_set_text(header, display_header.c_str());
     lv_obj_set_style_text_color(header, lv_palette_darken(LV_PALETTE_BLUE_GREY, 1), LV_PART_MAIN);
     lv_label_set_long_mode(header, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(header, LV_SIZE_CONTENT);
     lv_obj_set_style_max_width(header, content_max_width, LV_PART_MAIN);
     lv_obj_set_flex_grow(header, 1);
+
+    lv_obj_add_flag(header, LV_OBJ_FLAG_CLICKABLE);
+    HeaderEventData *hed = new HeaderEventData();
+    hed->header = full_header;
+    hed->is_sender = false;
+    lv_obj_add_event_cb(header, header_label_event_cb, LV_EVENT_CLICKED, hed);
+    lv_obj_add_event_cb(header, header_label_event_cb, LV_EVENT_DELETE, hed);
 
     if(bubble.timestamp.length() > 0)
     {
@@ -2035,6 +2078,88 @@ static void msg_list_append_bubble(const MsgBubble &bubble)
     lv_obj_set_style_text_color(body, lv_color_black(), LV_PART_MAIN);
 
     lv_obj_scroll_to_view(wrapper, LV_ANIM_OFF);
+}
+
+static void header_label_event_cb(lv_event_t * e)
+{
+    HeaderEventData *data = (HeaderEventData *)lv_event_get_user_data(e);
+    if(data == NULL)
+        return;
+
+    lv_event_code_t code = lv_event_get_code(e);
+    if(code == LV_EVENT_DELETE)
+    {
+        delete data;
+        return;
+    }
+
+    if(code != LV_EVENT_CLICKED)
+        return;
+
+    lv_obj_t *target = lv_event_get_target(e);
+    lv_indev_t *indev = lv_indev_get_act();
+    lv_point_t pt;
+    bool clicked_left = false;
+    if(indev != NULL)
+    {
+        lv_indev_get_point(indev, &pt);
+        lv_area_t area;
+        lv_obj_get_coords(target, &area);
+        lv_coord_t midx = (area.x1 + area.x2) / 2;
+        clicked_left = (pt.x <= midx);
+    }
+
+    String hdr = data->header;
+    int arrow = hdr.indexOf("->");
+    String left = hdr;
+    String right = "";
+    if(arrow != -1)
+    {
+        left = hdr.substring(0, arrow);
+        right = hdr.substring(arrow + 2);
+    }
+    left.trim();
+    right.trim();
+
+    if(clicked_left)
+    {
+        int comma = left.indexOf(',');
+        String sender = left;
+        if(comma != -1)
+            sender = left.substring(0, comma);
+        sender.trim();
+        if(dm_callsign != NULL)
+            lv_textarea_set_text(dm_callsign, sender.c_str());
+        if(tv != NULL)
+            lv_tabview_set_act(tv, 1, LV_ANIM_OFF);
+    }
+    else
+    {
+        int comma = right.indexOf(',');
+        String token = right;
+        if(comma != -1)
+            token = right.substring(0, comma);
+        token.trim();
+
+        if(token.equals("*"))
+        {
+            if(dm_callsign != NULL)
+                lv_textarea_set_text(dm_callsign, "");
+        }
+        else if(token.length() == 0)
+        {
+            if(dm_callsign != NULL)
+                lv_textarea_set_text(dm_callsign, "");
+        }
+        else
+        {
+            if(dm_callsign != NULL)
+                lv_textarea_set_text(dm_callsign, token.c_str());
+        }
+
+        if(tv != NULL)
+            lv_tabview_set_act(tv, 1, LV_ANIM_OFF);
+    }
 }
 
 static void msg_tabs_clear_all(void)
@@ -2109,9 +2234,7 @@ static bool compute_maidenhead_locator(double lat, double lon, char *buffer, siz
 }
 
 
-/**
- * update the battery label
- */
+
 void tdeck_update_batt_label(float batt, int proz)
 {
     char vChar[35];

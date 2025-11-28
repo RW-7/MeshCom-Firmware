@@ -28,6 +28,7 @@
 #include <lora_setchip.h>
 
 #include <esp32/esp32_flash.h>
+#include <SPIFFS.h>
 
 #if defined(ENABLE_AUDIO)
 #include <esp32/esp32_audio.h>
@@ -99,6 +100,7 @@ lv_obj_t    *gpson_sw;
 lv_obj_t    *track_sw;
 lv_obj_t    *wifiap_sw;
 lv_obj_t    *mute_sw;
+lv_obj_t    *immediate_save_sw;
 lv_obj_t    *tab_menu_header;
 lv_obj_t    *tab_menu_button;
 lv_obj_t    *tab_menu_icon_label;
@@ -139,6 +141,26 @@ static lv_obj_t *msg_tab_hint_label = NULL;
 static int msg_active_tab_index = -1;
 static const size_t MSG_TAB_MAX_MESSAGES = 50;
 
+// Persistence for recent messages (keeps insertion order, excludes System messages)
+static std::vector<std::pair<String, MsgBubble>> persisted_msgs;
+static bool loading_messages_from_file = false;
+static const size_t PERSISTED_MSG_LIMIT = 1000;
+static const char *PERSISTED_MSG_FILE = "/messages.jsonl";
+static int unsaved_msgs_count = 0;
+static const int FLUSH_THRESHOLD = 10;
+static unsigned long last_flush_millis = 0;
+// Temporarily shorten flush interval for testing: 20 seconds
+// Default flush interval: 5 minutes. For longer tests we also immediately
+// flush each incoming message so persisted state is always on flash.
+static const unsigned long FLUSH_INTERVAL_MS = 5UL * 60UL * 1000UL; // 5 minutes
+
+static void msg_flush_timer_cb(lv_timer_t *t);
+
+static String escape_json(const String &s);
+static String unescape_json(const String &s);
+static void save_persisted_messages(void);
+static void load_persisted_messages(void);
+
 static void tab_menu_button_event_cb(lv_event_t * e);
 static void tdeck_set_tab_menu_visible(bool show);
 static void update_header_sat_indicator(void);
@@ -168,7 +190,16 @@ struct HeaderEventData
     bool is_sender;
 };
 
+struct DeleteEventData
+{
+    String group;
+    String timestamp;
+    String header;
+    String body;
+};
+
 static void header_label_event_cb(lv_event_t * e);
+static void bubble_delete_event_cb(lv_event_t * e);
 static void ensure_msg_styles(void);
 static String build_timestamp_string(void);
 static bool is_numeric_string(const String &value);
@@ -917,6 +948,20 @@ void setDisplayLayout(lv_obj_t *parent)
 
     lv_obj_add_event_cb(mute_sw, btn_event_handler_switch, LV_EVENT_ALL, NULL);
 
+    // IMMEDIATE SAVE switch (below MUTE)
+    lv_obj_t * btn_immsave = lv_btn_create(t1);
+    lv_obj_set_pos(btn_immsave, 0, 410);
+    lv_obj_set_size(btn_immsave, 150, 25);
+
+    lv_obj_t * btn_immsave_label = lv_label_create(btn_immsave);
+    lv_label_set_text(btn_immsave_label, "IMMEDIATE SAVE");
+    lv_obj_center(btn_immsave_label);
+
+    immediate_save_sw = lv_switch_create(t1);
+    lv_obj_set_pos(immediate_save_sw, 155, 410);
+    lv_obj_set_size(immediate_save_sw, 45, 25);
+    lv_obj_add_event_cb(immediate_save_sw, btn_event_handler_switch, LV_EVENT_ALL, NULL);
+
     // WIFIAP ON/OFF
     lv_obj_t * btn_wifiap = lv_btn_create(t1);
     lv_obj_set_pos(btn_wifiap, 185, 375);
@@ -934,7 +979,7 @@ void setDisplayLayout(lv_obj_t *parent)
 
     // BTN SETUP
     lv_obj_t * btnsetup = lv_btn_create(t1);
-    lv_obj_set_pos(btnsetup, 0, 410);
+    lv_obj_set_pos(btnsetup, 0, 445);
     lv_obj_set_size(btnsetup, 100, 30);
     lv_obj_add_event_cb(btnsetup, btn_event_handler_setup, LV_EVENT_ALL, NULL);
 
@@ -944,7 +989,7 @@ void setDisplayLayout(lv_obj_t *parent)
 
     // VERSION
     lv_obj_t * btnsetup_version = lv_btn_create(t1);
-    lv_obj_set_pos(btnsetup_version, 185, 410);
+    lv_obj_set_pos(btnsetup_version, 185, 445);
     lv_obj_set_size(btnsetup_version, 105, 30);
 
     lv_obj_t * label_btnsetup_version = lv_label_create(btnsetup_version);
@@ -1804,6 +1849,12 @@ static void init_msg_tab_bar(lv_obj_t *parent)
 
     msg_tab_entries.clear();
     msg_active_tab_index = -1;
+    // load persisted messages from filesystem (if any)
+    load_persisted_messages();
+
+    // create a periodic timer to flush messages after a time interval
+    lv_timer_create(msg_flush_timer_cb, 60 * 1000, NULL); // check every 60s
+
     msg_tabs_update_hint();
 }
 
@@ -1833,6 +1884,19 @@ static void msg_tabs_select_index(int index)
     }
 
     msg_render_active_tab();
+}
+
+static void msg_flush_timer_cb(lv_timer_t *t)
+{
+    (void)t;
+    if(unsaved_msgs_count <= 0)
+        return;
+
+    unsigned long now = millis();
+    if(now - last_flush_millis >= FLUSH_INTERVAL_MS)
+    {
+        save_persisted_messages();
+    }
 }
 
 static void msg_tabs_trim_history(std::vector<MsgBubble> &bubbles)
@@ -1931,6 +1995,34 @@ static void msg_tabs_add_message(const String &group, const MsgBubble &bubble)
 
     entry->bubbles.push_back(bubble);
     msg_tabs_trim_history(entry->bubbles);
+
+    /* Persist non-system messages into messages.jsonl */
+    if(!loading_messages_from_file && bubble.type != MsgBubbleType::System)
+    {
+        persisted_msgs.push_back(std::make_pair(normalized, bubble));
+        if(persisted_msgs.size() > PERSISTED_MSG_LIMIT)
+        {
+            size_t overflow = persisted_msgs.size() - PERSISTED_MSG_LIMIT;
+            persisted_msgs.erase(persisted_msgs.begin(), persisted_msgs.begin() + overflow);
+        }
+
+        // If configured to immediate save, write to flash now. Otherwise
+        // buffer in RAM and flush periodically to reduce flash wear.
+        if(meshcom_settings.node_immediate_save)
+        {
+            save_persisted_messages();
+            unsaved_msgs_count = 0;
+        }
+        else
+        {
+            unsaved_msgs_count++;
+            if(unsaved_msgs_count >= FLUSH_THRESHOLD)
+            {
+                save_persisted_messages();
+                unsaved_msgs_count = 0;
+            }
+        }
+    }
 
     msg_tabs_select_index(index);
 }
@@ -2061,21 +2153,60 @@ static void msg_list_append_bubble(const MsgBubble &bubble)
     lv_obj_add_event_cb(header, header_label_event_cb, LV_EVENT_CLICKED, hed);
     lv_obj_add_event_cb(header, header_label_event_cb, LV_EVENT_DELETE, hed);
 
-    if(bubble.timestamp.length() > 0)
+    // add delete icon/button to the header row
+    String current_group = "MSG";
+    if(msg_active_tab_index >= 0 && msg_active_tab_index < (int)msg_tab_entries.size())
+        current_group = msg_tab_entries[msg_active_tab_index].group;
+
+    if(bubble.type != MsgBubbleType::System)
     {
-        lv_obj_t *time_label = lv_label_create(header_row);
-        lv_label_set_text(time_label, bubble.timestamp.c_str());
-        lv_obj_set_style_text_color(time_label, lv_palette_darken(LV_PALETTE_GREY, 1), LV_PART_MAIN);
-        lv_label_set_long_mode(time_label, LV_LABEL_LONG_CLIP);
-        lv_obj_set_width(time_label, LV_SIZE_CONTENT);
-        lv_obj_set_style_text_align(time_label, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
+        lv_obj_t *del_btn = lv_btn_create(header_row);
+        lv_obj_set_size(del_btn, 28, 24);
+        lv_obj_clear_flag(del_btn, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t *del_label = lv_label_create(del_btn);
+        lv_label_set_text(del_label, LV_SYMBOL_TRASH);
+        lv_obj_center(del_label);
+
+        // attach identifying userdata
+        DeleteEventData *ded = new DeleteEventData();
+        ded->group = current_group;
+        ded->timestamp = bubble.timestamp;
+        ded->header = bubble.header;
+        ded->body = bubble.body;
+        lv_obj_add_event_cb(del_btn, bubble_delete_event_cb, LV_EVENT_DELETE, ded);
+        // set the same user data for click handling
+        lv_obj_add_event_cb(del_btn, bubble_delete_event_cb, LV_EVENT_CLICKED, ded);
     }
+
+    // timestamp moved to footer (bottom-right)
 
     lv_obj_t *body = lv_label_create(bubble_obj);
     lv_label_set_text(body, bubble.body.c_str());
     lv_label_set_long_mode(body, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(body, content_max_width);
     lv_obj_set_style_text_color(body, lv_color_black(), LV_PART_MAIN);
+
+    // footer row with timestamp aligned to right-bottom
+    if(bubble.timestamp.length() > 0)
+    {
+        lv_obj_t *footer_row = lv_obj_create(bubble_obj);
+        lv_obj_set_width(footer_row, content_max_width);
+        lv_obj_set_height(footer_row, LV_SIZE_CONTENT);
+        lv_obj_set_style_bg_opa(footer_row, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_set_style_border_width(footer_row, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(footer_row, 0, LV_PART_MAIN);
+        lv_obj_clear_flag(footer_row, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_flex_flow(footer_row, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(footer_row, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+        lv_obj_t *time_label = lv_label_create(footer_row);
+        lv_label_set_text(time_label, bubble.timestamp.c_str());
+        lv_obj_set_style_text_color(time_label, lv_palette_darken(LV_PALETTE_GREY, 1), LV_PART_MAIN);
+        lv_label_set_long_mode(time_label, LV_LABEL_LONG_CLIP);
+        lv_obj_set_width(time_label, LV_SIZE_CONTENT);
+        lv_obj_set_style_text_align(time_label, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
+    }
 
     lv_obj_scroll_to_view(wrapper, LV_ANIM_OFF);
 }
@@ -2162,6 +2293,84 @@ static void header_label_event_cb(lv_event_t * e)
     }
 }
 
+static void bubble_delete_event_cb(lv_event_t * e)
+{
+    DeleteEventData *data = (DeleteEventData *)lv_event_get_user_data(e);
+    if(data == NULL)
+        return;
+
+    lv_event_code_t code = lv_event_get_code(e);
+    if(code == LV_EVENT_DELETE)
+    {
+        delete data;
+        return;
+    }
+
+    if(code != LV_EVENT_CLICKED)
+        return;
+
+    // Find the tab entry for the group
+    int idx = -1;
+    MsgTabEntry *entry = msg_tabs_find_entry(data->group, &idx);
+    if(entry != NULL)
+    {
+        // find matching bubble
+        for(size_t i = 0; i < entry->bubbles.size(); ++i)
+        {
+            const MsgBubble &b = entry->bubbles[i];
+            if(b.timestamp == data->timestamp && b.header == data->header && b.body == data->body)
+            {
+                entry->bubbles.erase(entry->bubbles.begin() + i);
+
+                // If this conversation became empty, remove its tab so empty groups are not shown
+                if(entry->bubbles.empty())
+                {
+                    // remove button and erase entry
+                    if(idx >= 0 && idx < (int)msg_tab_entries.size())
+                    {
+                        if(msg_tab_entries[idx].button != NULL)
+                        {
+                            lv_obj_del(msg_tab_entries[idx].button);
+                            msg_tab_entries[idx].button = NULL;
+                        }
+                        msg_tab_entries.erase(msg_tab_entries.begin() + idx);
+                        // adjust active index
+                        if(msg_active_tab_index >= (int)msg_tab_entries.size())
+                            msg_active_tab_index = (int)msg_tab_entries.size() - 1;
+                        msg_tabs_update_hint();
+                    }
+                }
+
+                break;
+            }
+        }
+    }
+
+    // remove from persisted_msgs
+    for(auto it = persisted_msgs.begin(); it != persisted_msgs.end(); )
+    {
+        const String &g = it->first;
+        const MsgBubble &b = it->second;
+        if(g.equalsIgnoreCase(data->group) && b.timestamp == data->timestamp && b.header == data->header && b.body == data->body)
+        {
+            it = persisted_msgs.erase(it);
+        }
+        else
+            ++it;
+    }
+
+    // Save immediately to reflect deletion
+    save_persisted_messages();
+
+    // Re-render the active tab so the UI updates
+    if(msg_active_tab_index >= 0)
+    {
+        if(msg_active_tab_index >= (int)msg_tab_entries.size())
+            msg_active_tab_index = (int)msg_tab_entries.size() - 1;
+        msg_render_active_tab();
+    }
+}
+
 static void msg_tabs_clear_all(void)
 {
     for(auto &entry : msg_tab_entries)
@@ -2178,6 +2387,207 @@ static void msg_tabs_clear_all(void)
     msg_tabs_update_hint();
     msg_list_show_hint("No messages yet");
 }
+
+// -- Persistence implementation -------------------------------------------------
+
+static String escape_json(const String &s)
+{
+    String out;
+    out.reserve(s.length() * 2 + 8);
+    for(size_t i = 0; i < s.length(); ++i)
+    {
+        char c = s[i];
+        if(c == '"') out += "\\\"";
+        else if(c == '\\') out += "\\\\";
+        else if(c == '\n') out += "\\n";
+        else if(c == '\r') out += "\\r";
+        else if(c == '\t') out += "\\t";
+        else out += c;
+    }
+    return out;
+}
+
+static String unescape_json(const String &s)
+{
+    String out;
+    out.reserve(s.length());
+    for(size_t i = 0; i < s.length(); ++i)
+    {
+        char c = s[i];
+        if(c == '\\' && i + 1 < s.length())
+        {
+            char n = s[i+1];
+            if(n == 'n') { out += '\n'; i++; }
+            else if(n == 'r') { out += '\r'; i++; }
+            else if(n == 't') { out += '\t'; i++; }
+            else if(n == '\\') { out += '\\'; i++; }
+            else if(n == '"') { out += '"'; i++; }
+            else { out += n; i++; }
+        }
+        else
+        {
+            out += c;
+        }
+    }
+    return out;
+}
+
+static void save_persisted_messages(void)
+{
+    if(persisted_msgs.empty())
+        return;
+
+    if(!SPIFFS.begin(true))
+    {
+        Serial.println("[MSG] SPIFFS begin failed (save)");
+        return;
+    }
+
+    const char *tmp = "/messages.jsonl.tmp";
+    File f = SPIFFS.open(tmp, FILE_WRITE);
+    if(!f)
+    {
+        Serial.println("[MSG] Failed to open temp messages file for writing");
+        return;
+    }
+
+    for(const auto &p : persisted_msgs)
+    {
+        const String &group = p.first;
+        const MsgBubble &b = p.second;
+        String type = "incoming";
+        if(b.type == MsgBubbleType::Outgoing) type = "outgoing";
+        else if(b.type == MsgBubbleType::System) type = "system";
+
+        String line = "{";
+        line += "\"group\":\"" + escape_json(group) + "\",";
+        line += "\"type\":\"" + type + "\",";
+        line += "\"timestamp\":\"" + escape_json(b.timestamp) + "\",";
+        line += "\"header\":\"" + escape_json(b.header) + "\",";
+        line += "\"body\":\"" + escape_json(b.body) + "\"}";
+
+        f.println(line);
+    }
+
+    f.flush();
+    f.close();
+
+    // rename tmp -> final
+    if(SPIFFS.exists(PERSISTED_MSG_FILE))
+        SPIFFS.remove(PERSISTED_MSG_FILE);
+    SPIFFS.rename(tmp, PERSISTED_MSG_FILE);
+
+    SPIFFS.end();
+    // update flush timestamp and reset unsaved counter
+    last_flush_millis = millis();
+    unsaved_msgs_count = 0;
+}
+
+static void load_persisted_messages(void)
+{
+    persisted_msgs.clear();
+    loading_messages_from_file = true;
+
+    if(!SPIFFS.begin(true))
+    {
+        Serial.println("[MSG] SPIFFS begin failed (load)");
+        loading_messages_from_file = false;
+        return;
+    }
+
+    if(!SPIFFS.exists(PERSISTED_MSG_FILE))
+    {
+        SPIFFS.end();
+        loading_messages_from_file = false;
+        return;
+    }
+
+    File f = SPIFFS.open(PERSISTED_MSG_FILE, FILE_READ);
+    if(!f)
+    {
+        Serial.println("[MSG] Failed to open messages file for reading");
+        SPIFFS.end();
+        loading_messages_from_file = false;
+        return;
+    }
+
+    while(f.available())
+    {
+        String line = f.readStringUntil('\n');
+        line.trim();
+        if(line.length() == 0) continue;
+
+        // naive parse because we wrote a controlled JSON format
+        auto extract = [&](const char *key)->String{
+            String k = String("\"") + key + "\":";
+            int pos = line.indexOf(k);
+            if(pos == -1) return String();
+            pos += k.length();
+            // expect a quote
+            if(pos >= line.length() || line[pos] != '"') return String();
+            pos++;
+            String val;
+            while(pos < line.length())
+            {
+                char c = line[pos];
+                if(c == '"') break;
+                if(c == '\\' && pos + 1 < line.length())
+                {
+                    char n = line[pos+1];
+                    val += '\\';
+                    val += n;
+                    pos += 2;
+                    continue;
+                }
+                val += c;
+                pos++;
+            }
+            return unescape_json(val);
+        };
+
+        String group = extract("group");
+        String type = extract("type");
+        String timestamp = extract("timestamp");
+        String header = extract("header");
+        String body = extract("body");
+
+        MsgBubble b;
+        if(type.equalsIgnoreCase("outgoing")) b.type = MsgBubbleType::Outgoing;
+        else if(type.equalsIgnoreCase("system")) b.type = MsgBubbleType::System;
+        else b.type = MsgBubbleType::Incoming;
+
+        b.timestamp = timestamp;
+        b.header = header;
+        b.body = body;
+
+        persisted_msgs.push_back(std::make_pair(group, b));
+        if(persisted_msgs.size() >= PERSISTED_MSG_LIMIT)
+            break;
+    }
+
+    f.close();
+    SPIFFS.end();
+
+    // populate msg_tab_entries with loaded messages
+    for(const auto &p : persisted_msgs)
+    {
+        const String &group = p.first;
+        const MsgBubble &b = p.second;
+        int idx = -1;
+        MsgTabEntry *entry = msg_tabs_get_or_create_entry(group, &idx);
+        if(entry != NULL)
+        {
+            entry->bubbles.push_back(b);
+            msg_tabs_trim_history(entry->bubbles);
+        }
+    }
+
+    loading_messages_from_file = false;
+    // set last flush timestamp so timer waits full interval before next auto-save
+    last_flush_millis = millis();
+}
+
+// -----------------------------------------------------------------------------
 
 static bool compute_maidenhead_locator(double lat, double lon, char *buffer, size_t len)
 {
@@ -2736,5 +3146,19 @@ void tdeck_add_MSG(String callsign, String path, String message, bool bWithAudio
 
 void tdeck_reset_msg_tabs(void)
 {
+    // Clear UI tabs (buttons and displayed bubbles), but preserve persisted messages
     msg_tabs_clear_all();
+
+    // Re-populate UI from persisted messages without re-persisting them
+    bool prev_loading = loading_messages_from_file;
+    loading_messages_from_file = true;
+    for(const auto &p : persisted_msgs)
+    {
+        msg_tabs_add_message(p.first, p.second);
+    }
+    loading_messages_from_file = prev_loading;
+
+    // Select first tab if available
+    if(!msg_tab_entries.empty())
+        msg_tabs_select_index(0);
 }

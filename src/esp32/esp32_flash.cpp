@@ -193,6 +193,7 @@ void init_flash(void)
     meshcom_settings.node_backlightlock = preferences.getBool("node_bllock", false);
     meshcom_settings.node_modus = preferences.getInt("node_modus", 0);
     meshcom_settings.node_mute = preferences.getBool("node_mute", false);
+    meshcom_settings.node_immediate_save = preferences.getBool("node_immsave", false);
     #endif
 
     meshcom_settings.node_wifi_power = preferences.getInt("node_wifip", 60);
@@ -404,6 +405,7 @@ void save_settings(void)
     preferences.putBool("node_bllock", meshcom_settings.node_backlightlock);
     preferences.putInt("node_modus", meshcom_settings.node_modus);
     preferences.putBool("node_mute", meshcom_settings.node_mute);
+    preferences.putBool("node_immsave", meshcom_settings.node_immediate_save);
     #endif 
 
     preferences.putInt("node_wifip", meshcom_settings.node_wifi_power);

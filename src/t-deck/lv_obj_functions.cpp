@@ -3099,5 +3099,19 @@ void tdeck_add_MSG(String callsign, String path, String message, bool bWithAudio
 
 void tdeck_reset_msg_tabs(void)
 {
+    // Clear UI tabs (buttons and displayed bubbles), but preserve persisted messages
     msg_tabs_clear_all();
+
+    // Re-populate UI from persisted messages without re-persisting them
+    bool prev_loading = loading_messages_from_file;
+    loading_messages_from_file = true;
+    for(const auto &p : persisted_msgs)
+    {
+        msg_tabs_add_message(p.first, p.second);
+    }
+    loading_messages_from_file = prev_loading;
+
+    // Select first tab if available
+    if(!msg_tab_entries.empty())
+        msg_tabs_select_index(0);
 }

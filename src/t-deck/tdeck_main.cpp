@@ -430,7 +430,6 @@ static void keypad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
     static uint32_t last_key = 0;
     uint32_t act_key ;
     act_key = keypad_get_key();
-    uint32_t raw_key = act_key; // keep raw value for debug output
     if (act_key != 0)
     {
         if(iKeyBoardType == 2)
@@ -524,11 +523,7 @@ static void keypad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
             }
         }
     
-        // Print detailed debug info: raw keycode and mapped output
-        {
-            char mapped_char = (act_key >= 32 && act_key <= 126) ? (char)act_key : '.';
-            Serial.printf("KB RAW=0x%02X MODE=%d MAPPED=0x%02X '%c'\n", (unsigned)raw_key, iKeyBoardType, (unsigned)act_key, mapped_char);
-        }
+        
 
         if(!meshcom_settings.node_keyboardlock)
             tft_on();

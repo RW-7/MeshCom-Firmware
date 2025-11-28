@@ -400,6 +400,15 @@ void btn_event_handler_switch(lv_event_t * e)
             return;
         }
 
+        // IMMEDIATE SAVE (persist each incoming non-system message immediately)
+        if (lv_event_get_target(e) == immediate_save_sw)
+        {
+            meshcom_settings.node_immediate_save = lv_obj_has_state(immediate_save_sw, LV_STATE_CHECKED);
+            save_settings();
+
+            return;
+        }
+
         // WIFIAP
         if (lv_event_get_target(e) == wifiap_sw)
         {

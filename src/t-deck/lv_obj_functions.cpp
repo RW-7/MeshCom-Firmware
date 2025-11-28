@@ -100,6 +100,7 @@ lv_obj_t    *gpson_sw;
 lv_obj_t    *track_sw;
 lv_obj_t    *wifiap_sw;
 lv_obj_t    *mute_sw;
+lv_obj_t    *immediate_save_sw;
 lv_obj_t    *tab_menu_header;
 lv_obj_t    *tab_menu_button;
 lv_obj_t    *tab_menu_icon_label;
@@ -947,6 +948,20 @@ void setDisplayLayout(lv_obj_t *parent)
 
     lv_obj_add_event_cb(mute_sw, btn_event_handler_switch, LV_EVENT_ALL, NULL);
 
+    // IMMEDIATE SAVE switch (below MUTE)
+    lv_obj_t * btn_immsave = lv_btn_create(t1);
+    lv_obj_set_pos(btn_immsave, 0, 410);
+    lv_obj_set_size(btn_immsave, 150, 25);
+
+    lv_obj_t * btn_immsave_label = lv_label_create(btn_immsave);
+    lv_label_set_text(btn_immsave_label, "IMMEDIATE SAVE");
+    lv_obj_center(btn_immsave_label);
+
+    immediate_save_sw = lv_switch_create(t1);
+    lv_obj_set_pos(immediate_save_sw, 155, 410);
+    lv_obj_set_size(immediate_save_sw, 45, 25);
+    lv_obj_add_event_cb(immediate_save_sw, btn_event_handler_switch, LV_EVENT_ALL, NULL);
+
     // WIFIAP ON/OFF
     lv_obj_t * btn_wifiap = lv_btn_create(t1);
     lv_obj_set_pos(btn_wifiap, 185, 375);
@@ -964,7 +979,7 @@ void setDisplayLayout(lv_obj_t *parent)
 
     // BTN SETUP
     lv_obj_t * btnsetup = lv_btn_create(t1);
-    lv_obj_set_pos(btnsetup, 0, 410);
+    lv_obj_set_pos(btnsetup, 0, 445);
     lv_obj_set_size(btnsetup, 100, 30);
     lv_obj_add_event_cb(btnsetup, btn_event_handler_setup, LV_EVENT_ALL, NULL);
 
@@ -974,7 +989,7 @@ void setDisplayLayout(lv_obj_t *parent)
 
     // VERSION
     lv_obj_t * btnsetup_version = lv_btn_create(t1);
-    lv_obj_set_pos(btnsetup_version, 185, 410);
+    lv_obj_set_pos(btnsetup_version, 185, 445);
     lv_obj_set_size(btnsetup_version, 105, 30);
 
     lv_obj_t * label_btnsetup_version = lv_label_create(btnsetup_version);
@@ -1991,11 +2006,22 @@ static void msg_tabs_add_message(const String &group, const MsgBubble &bubble)
             persisted_msgs.erase(persisted_msgs.begin(), persisted_msgs.begin() + overflow);
         }
 
-        // For longer tests we want every incoming message immediately
-        // persisted to flash so a reboot / power-cycle keeps the data.
-        // Call save_persisted_messages() right away and reset the counter.
-        save_persisted_messages();
-        unsaved_msgs_count = 0;
+        // If configured to immediate save, write to flash now. Otherwise
+        // buffer in RAM and flush periodically to reduce flash wear.
+        if(meshcom_settings.node_immediate_save)
+        {
+            save_persisted_messages();
+            unsaved_msgs_count = 0;
+        }
+        else
+        {
+            unsaved_msgs_count++;
+            if(unsaved_msgs_count >= FLUSH_THRESHOLD)
+            {
+                save_persisted_messages();
+                unsaved_msgs_count = 0;
+            }
+        }
     }
 
     msg_tabs_select_index(index);

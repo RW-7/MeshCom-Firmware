@@ -149,7 +149,9 @@ static int unsaved_msgs_count = 0;
 static const int FLUSH_THRESHOLD = 10;
 static unsigned long last_flush_millis = 0;
 // Temporarily shorten flush interval for testing: 20 seconds
-static const unsigned long FLUSH_INTERVAL_MS = 20UL * 1000UL; // 20 seconds (was 10 minutes)
+// Default flush interval: 5 minutes. For longer tests we also immediately
+// flush each incoming message so persisted state is always on flash.
+static const unsigned long FLUSH_INTERVAL_MS = 5UL * 60UL * 1000UL; // 5 minutes
 
 static void msg_flush_timer_cb(lv_timer_t *t);
 
@@ -1988,13 +1990,12 @@ static void msg_tabs_add_message(const String &group, const MsgBubble &bubble)
             size_t overflow = persisted_msgs.size() - PERSISTED_MSG_LIMIT;
             persisted_msgs.erase(persisted_msgs.begin(), persisted_msgs.begin() + overflow);
         }
-        // Buffer in RAM and flush periodically to reduce flash wear
-        unsaved_msgs_count++;
-        if(unsaved_msgs_count >= FLUSH_THRESHOLD)
-        {
-            save_persisted_messages();
-            unsaved_msgs_count = 0;
-        }
+
+        // For longer tests we want every incoming message immediately
+        // persisted to flash so a reboot / power-cycle keeps the data.
+        // Call save_persisted_messages() right away and reset the counter.
+        save_persisted_messages();
+        unsaved_msgs_count = 0;
     }
 
     msg_tabs_select_index(index);
@@ -2294,6 +2295,26 @@ static void bubble_delete_event_cb(lv_event_t * e)
             if(b.timestamp == data->timestamp && b.header == data->header && b.body == data->body)
             {
                 entry->bubbles.erase(entry->bubbles.begin() + i);
+
+                // If this conversation became empty, remove its tab so empty groups are not shown
+                if(entry->bubbles.empty())
+                {
+                    // remove button and erase entry
+                    if(idx >= 0 && idx < (int)msg_tab_entries.size())
+                    {
+                        if(msg_tab_entries[idx].button != NULL)
+                        {
+                            lv_obj_del(msg_tab_entries[idx].button);
+                            msg_tab_entries[idx].button = NULL;
+                        }
+                        msg_tab_entries.erase(msg_tab_entries.begin() + idx);
+                        // adjust active index
+                        if(msg_active_tab_index >= (int)msg_tab_entries.size())
+                            msg_active_tab_index = (int)msg_tab_entries.size() - 1;
+                        msg_tabs_update_hint();
+                    }
+                }
+
                 break;
             }
         }

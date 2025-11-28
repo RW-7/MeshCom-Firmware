@@ -482,33 +482,34 @@ static void keypad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
             if(act_key >= 0x61 && act_key <= 0x7a)
             {
                 // Index 0..25 corresponds to 'a'..'z'.
+                // Values taken from Keyboard_ESP32C3.ino keyboard_symbol matrix
                 static const char sym_map[26] = {
-                    '*', // a
-                    '!', // b
-                    '9', // c -> changed to '9'
-                    '5', // d -> changed to '5'
-                    '2', // e -> changed to '2'
-                    '6', // f -> changed to '6'
-                    '/', // g  (changed to '/')
-                    ':', // h  (changed to ':')
-                    '-', // i  (changed to '-')
-                    ';', // j  (changed to ';')
-                    ',', // k  (changed to ',')
-                    '"',// l
-                    '.', // m
-                    ',', // n
-                    '+', // o  (changed to '+')
-                    '@', // p
-                    '#', // q
-                    '3', // r
-                    '4', // s
-                    '(', // t  (changed to '(')
-                    '_', // u  (changed to '_')
-                    '?', // v
-                    '1', // w
-                    '8', // x
-                    ')', // y  (changed to ')')
-                    '7'  // z
+                    '*', // a  -> keyboard_symbol[0][3]
+                    '!', // b  -> keyboard_symbol[3][4]
+                    '9', // c  -> keyboard_symbol[2][5]
+                    '5', // d  -> keyboard_symbol[1][2]
+                    '2', // e  -> keyboard_symbol[1][0]
+                    '6', // f  -> keyboard_symbol[2][6]
+                    '/', // g  -> keyboard_symbol[2][1]
+                    ':', // h  -> keyboard_symbol[3][1]
+                    '-', // i  -> keyboard_symbol[4][2]
+                    ';', // j  -> keyboard_symbol[3][6]
+                    '\'',// k  -> keyboard_symbol[4][6] (apostrophe)
+                    '"',// l  -> keyboard_symbol[4][1]
+                    '.', // m  -> keyboard_symbol[4][5]
+                    ',', // n  -> keyboard_symbol[3][5]
+                    '+', // o  -> keyboard_symbol[4][0]
+                    '@', // p  -> keyboard_symbol[1][3]
+                    '#', // q  -> keyboard_symbol[0][0]
+                    '3', // r  -> keyboard_symbol[2][0]
+                    '4', // s  -> keyboard_symbol[1][1]
+                    '(', // t  -> keyboard_symbol[2][2]
+                    '_', // u  -> keyboard_symbol[3][0]
+                    '?', // v  -> keyboard_symbol[2][4]
+                    '1', // w  -> keyboard_symbol[0][1]
+                    '8', // x  -> keyboard_symbol[1][4]
+                    ')', // y  -> keyboard_symbol[3][2]
+                    '7'  // z  -> keyboard_symbol[1][5]
                 };
 
                 act_key = (uint32_t)sym_map[act_key - 0x61];

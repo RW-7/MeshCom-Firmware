@@ -20,5 +20,6 @@ extern uint8_t current_brightness_level;
 void cycleBrightness();
 void resetBrightness();
 void setBrightness(uint8_t);
+void setKeyboardBacklight(uint8_t value);
 
-#endif
+#endif // _TDECK_HELPERS_H_

@@ -10,7 +10,9 @@
 #include "tdeck_helpers.h"
 #include <loop_functions.h>
 #include <Arduino.h>
+#include <Wire.h>
 #include "lv_obj_functions.h"
+#include <esp32/esp32_flash.h>
 
 #define _BRIGHTNESS_DEBUG_ true
 
@@ -56,6 +58,12 @@ void setBrightness(uint8_t value)
         current_brightness_level = 0;
         // Also turn off the TFT display itself to save power
         tft_off();
+
+        // Sync keyboard backlight if enabled
+        if(meshcom_settings.node_kbl_sync) {
+            setKeyboardBacklight(0);
+        }
+
         return;
     }
 
@@ -65,6 +73,12 @@ void setBrightness(uint8_t value)
         digitalWrite(TDECK_TFT_BACKLIGHT, 1);
         current_brightness_level = BRIGHTNESS_STEPS;
         delayMicroseconds(30);
+    }
+    
+    // Sync keyboard backlight if enabled and not locked
+    if(meshcom_settings.node_kbl_sync && !meshcom_settings.node_keyboardlock) {
+        uint8_t kbl_val = (value >= BRIGHTNESS_STEPS) ? 255 : (value * 16);
+        setKeyboardBacklight(kbl_val); 
     }
 
     int from = BRIGHTNESS_STEPS - current_brightness_level;
@@ -79,4 +93,15 @@ void setBrightness(uint8_t value)
 
     current_brightness_level = value;
     pre_sleep_brightness_level = current_brightness_level;
+}
+
+/**
+ * sets keyboard backlight level
+ */
+void setKeyboardBacklight(uint8_t value)
+{
+    Wire.beginTransmission(0x55);
+    Wire.write(0x01);
+    Wire.write(value);
+    Wire.endTransmission();
 }

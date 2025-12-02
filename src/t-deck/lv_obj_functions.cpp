@@ -107,9 +107,12 @@ lv_obj_t    *wifiap_sw;
 lv_obj_t    *wifi_sw;
 lv_obj_t    *mute_sw;
 lv_obj_t    *immediate_save_sw;
+lv_obj_t    *kbl_sync_sw;
 lv_obj_t    *tab_menu_header;
 lv_obj_t    *tab_menu_button;
 lv_obj_t    *tab_menu_icon_label;
+lv_obj_t    *tab_kbl_button;
+lv_obj_t    *tab_kbl_icon_label;
 lv_obj_t    *header_time_label;
 lv_obj_t    *header_sat_icon;
 lv_obj_t    *header_sat_label;
@@ -291,6 +294,25 @@ bool tdeck_tab_menu_is_visible(void)
     return tab_menu_visible;
 }
 
+static void tab_kbl_button_event_cb(lv_event_t * e)
+{
+    static bool kbl_on = false;
+    if(lv_event_get_code(e) == LV_EVENT_CLICKED)
+    {
+        kbl_on = !kbl_on;
+        if(kbl_on)
+        {
+            setKeyboardBacklight(255);
+            lv_obj_set_style_text_color(tab_kbl_icon_label, lv_palette_main(LV_PALETTE_YELLOW), LV_PART_MAIN);
+        }
+        else
+        {
+            setKeyboardBacklight(0);
+            lv_obj_set_style_text_color(tab_kbl_icon_label, lv_palette_main(LV_PALETTE_GREY), LV_PART_MAIN);
+        }
+    }
+}
+
 static void tab_menu_button_event_cb(lv_event_t * e)
 {
     if(lv_event_get_code(e) == LV_EVENT_CLICKED)
@@ -377,11 +399,25 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_obj_set_style_text_color(tab_menu_icon_label, lv_palette_main(LV_PALETTE_LIGHT_GREEN), LV_PART_MAIN);
     lv_obj_center(tab_menu_icon_label);
 
+    tab_kbl_button = lv_btn_create(tab_menu_header);
+    lv_obj_set_size(tab_kbl_button, 40, header_height - 8);
+    lv_obj_align(tab_kbl_button, LV_ALIGN_LEFT_MID, 40, 0);
+    lv_obj_add_event_cb(tab_kbl_button, tab_kbl_button_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_set_style_bg_color(tab_kbl_button, header_blue, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(tab_kbl_button, header_blue, LV_PART_MAIN | LV_STATE_CHECKED);
+    lv_obj_set_style_border_width(tab_kbl_button, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(tab_kbl_button, 4, LV_PART_MAIN);
+
+    tab_kbl_icon_label = lv_label_create(tab_kbl_button);
+    lv_label_set_text(tab_kbl_icon_label, LV_SYMBOL_KEYBOARD);
+    lv_obj_set_style_text_color(tab_kbl_icon_label, lv_palette_main(LV_PALETTE_GREY), LV_PART_MAIN);
+    lv_obj_center(tab_kbl_icon_label);
+
     header_time_label = lv_label_create(tab_menu_header);
     lv_label_set_text(header_time_label, "--:--");
     lv_label_set_long_mode(header_time_label, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_color(header_time_label, lv_color_white(), LV_PART_MAIN);
-    lv_obj_align(header_time_label, LV_ALIGN_LEFT_MID, 48, 0);
+    lv_obj_align(header_time_label, LV_ALIGN_LEFT_MID, 88, 0);
 
     header_sat_label = lv_label_create(tab_menu_header);
     lv_label_set_text(header_sat_label, "0");
@@ -648,13 +684,17 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_dropdown_set_options(dropdown_mapselect, getMapDropbox().c_str());
     lv_obj_add_event_cb(dropdown_mapselect, btn_event_handler_dropdown_mapselect, LV_EVENT_ALL, NULL);
 
-    // COUNTRY TAB
-    dropdown_country = lv_dropdown_create(t1);
-    lv_dropdown_set_text(dropdown_country, (char*)"CTRY");
-    lv_obj_set_pos(dropdown_country, 195, 60);
-    lv_obj_set_size(dropdown_country, 110, 25);
-    lv_dropdown_set_options(dropdown_country, getCountryDropbox().c_str());
-    lv_obj_add_event_cb(dropdown_country, btn_event_handler_dropdown_country, LV_EVENT_ALL, NULL);
+    // KBL SYNC SWITCH
+    kbl_sync_sw = lv_switch_create(t1);
+    lv_obj_set_pos(kbl_sync_sw, 195, 60);
+    lv_obj_set_size(kbl_sync_sw, 40, 20);
+    if(meshcom_settings.node_kbl_sync) lv_obj_add_state(kbl_sync_sw, LV_STATE_CHECKED);
+    lv_obj_add_event_cb(kbl_sync_sw, btn_event_handler_kbl_sync_sw, LV_EVENT_ALL, NULL);
+    
+    lv_obj_t * kbl_sync_label = lv_label_create(t1);
+    lv_label_set_text(kbl_sync_label, "KBL SYNC");
+    lv_obj_set_pos(kbl_sync_label, 245, 62);
+    lv_obj_set_style_text_color(kbl_sync_label, lv_color_black(), LV_PART_MAIN);
 
     // APRS TAB
     dropdown_aprs = lv_dropdown_create(t1);
@@ -1000,7 +1040,7 @@ void setDisplayLayout(lv_obj_t *parent)
     char sv[50];
     sprintf(sv, "MeshCom %s%s", SOURCE_VERSION, SOURCE_VERSION_SUB);
     lv_label_set_text(label_btnsetup_version, sv);
-    lv_obj_center(label_btnsetup_version);
+    lv_obj_center(btnlabel_setup);
 
     ////////////////////////////////////////////////////////////////////////////
     // TEXT OUTPUT
@@ -1598,6 +1638,14 @@ void tft_on()
     tft.writecommand(TFT_SLPOUT);
     tft.writecommand(TFT_DISPON);
     resetBrightness();
+
+    // Force sync keyboard backlight
+    if(meshcom_settings.node_kbl_sync && !meshcom_settings.node_keyboardlock) {
+        uint8_t val = current_brightness_level;
+        uint8_t kbl_val = (val >= BRIGHTNESS_STEPS) ? 255 : (val * 16);
+        setKeyboardBacklight(kbl_val);
+    }
+
     tdeck_tft_timer = millis();
 }
 
@@ -1612,6 +1660,7 @@ void tft_off()
         if(current_brightness_level > 0) {
              setBrightness(0);
         }
+        setKeyboardBacklight(0);
         tft.writecommand(TFT_DISPOFF);
         tft.writecommand(TFT_SLPIN);
     }
@@ -3118,20 +3167,11 @@ void tdeck_refresh_SET_view()
         lv_obj_add_state(wifiap_sw, LV_STATE_CHECKED);
     else
         lv_obj_clear_state(wifiap_sw, LV_STATE_CHECKED);
-    // WIFI enabled persisted (read from Preferences to avoid modifying global struct)
-    {
-        Preferences pref;
-        pref.begin("Credentials", true);
-        // Use same default as startWIFI() so behavior is consistent when the
-        // preference isn't set yet.
-        bool wfen = pref.getBool("node_wifion", true);
-        pref.end();
-
-        if (wfen)
-            lv_obj_add_state(wifi_sw, LV_STATE_CHECKED);
-        else
-            lv_obj_clear_state(wifi_sw, LV_STATE_CHECKED);
-    }
+    // BTN LOCK
+    if (meshcom_settings.node_keyboardlock)
+        lv_obj_add_state(kbl_sync_sw, LV_STATE_CHECKED);
+    else
+        lv_obj_clear_state(kbl_sync_sw, LV_STATE_CHECKED);
 }
 
 char ctrack[300];

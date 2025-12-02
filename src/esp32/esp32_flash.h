@@ -187,6 +187,7 @@ struct s_meshcom_settings
 	// When true: persist every incoming non-system message immediately
 	// (useful for long-running tests; may increase flash wear).
 	bool node_immediate_save = true;
+	bool node_kbl_sync = true;
 	#endif
 };
 

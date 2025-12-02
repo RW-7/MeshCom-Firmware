@@ -13,6 +13,7 @@
 #include <debugconf.h>
 #include "event_functions.h"
 #include "tdeck_extern.h"
+#include "tdeck_helpers.h"
 #include "lv_obj_functions.h"
 #include "lv_obj_functions_extern.h"
 #include <loop_functions.h>
@@ -160,6 +161,7 @@ void btn_event_handler_dropdown_modusselect(lv_event_t * e)
             meshcom_settings.node_modus = 1;
             meshcom_settings.node_keyboardlock = true;
             meshcom_settings.node_backlightlock = false;
+            setKeyboardBacklight(0);
             lv_tabview_set_act(tv, 0, LV_ANIM_OFF);
         }
         else
@@ -175,6 +177,7 @@ void btn_event_handler_dropdown_modusselect(lv_event_t * e)
             meshcom_settings.node_modus = 3;
             meshcom_settings.node_keyboardlock = true;
             meshcom_settings.node_backlightlock = true;
+            setKeyboardBacklight(0);
             lv_tabview_set_act(tv, 0, LV_ANIM_OFF);
         }
 
@@ -205,6 +208,29 @@ void btn_event_handler_dropdown_modusselect(lv_event_t * e)
         lv_dropdown_set_selected(dropdown_modusselect, meshcom_settings.node_modus);
 
         lv_dropdown_open(dropdown_modusselect);
+    }
+}
+
+/**
+ * handler for kbl sync switch
+ */
+void btn_event_handler_kbl_sync_sw(lv_event_t * e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    lv_obj_t * obj = lv_event_get_target(e);
+
+    if(code == LV_EVENT_VALUE_CHANGED) {
+        meshcom_settings.node_kbl_sync = lv_obj_has_state(obj, LV_STATE_CHECKED);
+        save_settings();
+        
+        // Apply immediately if display is on
+        if(current_brightness_level > 0 && !meshcom_settings.node_keyboardlock) {
+            if(meshcom_settings.node_kbl_sync) {
+                setKeyboardBacklight(current_brightness_level); // Or just ON? User said "an bzw aus"
+            } else {
+                setKeyboardBacklight(0);
+            }
+        }
     }
 }
 

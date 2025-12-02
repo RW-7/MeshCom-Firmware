@@ -10,6 +10,7 @@
 #include "tdeck_helpers.h"
 #include <loop_functions.h>
 #include <Arduino.h>
+#include "lv_obj_functions.h"
 
 #define _BRIGHTNESS_DEBUG_ true
 
@@ -53,6 +54,8 @@ void setBrightness(uint8_t value)
         digitalWrite(TDECK_TFT_BACKLIGHT, 0);
         delay(3);
         current_brightness_level = 0;
+        // Also turn off the TFT display itself to save power
+        tft_off();
         return;
     }
 

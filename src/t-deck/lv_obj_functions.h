@@ -48,4 +48,6 @@ void tdeck_show_tab_menu();
 void tdeck_toggle_tab_menu();
 bool tdeck_tab_menu_is_visible();
 
+void tdeck_show_pos_tab();
+
 #endif // _LV_OBJ_FUNCTIONS_H_

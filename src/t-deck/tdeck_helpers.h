@@ -15,6 +15,8 @@
 
 #include <configuration.h>
 
+extern uint8_t current_brightness_level;
+
 void cycleBrightness();
 void resetBrightness();
 void setBrightness(uint8_t);

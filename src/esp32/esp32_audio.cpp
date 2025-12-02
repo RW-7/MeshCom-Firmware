@@ -34,31 +34,11 @@ void init_audio()
     audioSemaphore = xSemaphoreCreateBinary();
     xSemaphoreGive(audioSemaphore);
 
-    i2s_config_t i2s_config = {
-        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
-        .sample_rate = SAMPLE_RATE,
-        .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
-        .channel_format = I2S_CHANNEL_FMT_ONLY_RIGHT, // Mono
-        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
-        .intr_alloc_flags = 0,
-        .dma_buf_count = 8,
-        .dma_buf_len = 64,
-        .use_apll = false,
-        .tx_desc_auto_clear = true,
-        .fixed_mclk = 0
-    };
-
-    i2s_pin_config_t pin_config = {
-        .bck_io_num = I2S_BCLK,
-        .ws_io_num = I2S_LRC,
-        .data_out_num = I2S_DOUT,
-        .data_in_num = -1
-    };
-
-    i2s_driver_install(i2s_num, &i2s_config, 0, NULL);
-    i2s_set_pin(i2s_num, &pin_config);
-
+    // Remove manual I2S driver installation as the Audio library handles this internally.
+    // Double initialization causes "register I2S object to platform failed" errors.
+    
     audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
+    audio.setVolume(12); // Set a default volume
 }
 
 /**
@@ -211,7 +191,12 @@ void playTone(int duration_ms, int volume_percent) {
 
     // send buffer until duration is et
     while (total_ms > 0) {
-        i2s_write(i2s_num, buffer, sizeof(buffer), &bytes_written, portMAX_DELAY);
+        // Use a timeout instead of portMAX_DELAY to prevent freezing if I2S is not consuming data
+        esp_err_t err = i2s_write(i2s_num, buffer, sizeof(buffer), &bytes_written, 100 / portTICK_PERIOD_MS);
+        if (err != ESP_OK) {
+            if (bDEBUG) Serial.printf("[audio]...i2s_write failed: %d\n", err);
+            break; // Exit loop on error to prevent freeze
+        }
         total_ms--;
     }
 }
@@ -429,6 +414,8 @@ void play_cw_start()
         return;
     }
 
+    if (bDEBUG) Serial.println("[audio]...playing CW start");
+
     const char *morseCode = "-.-.-";
 
     for (int i = 0; morseCode[i] != '\0'; i++) {
@@ -452,12 +439,14 @@ void play_function(void *parameter)
 {
     while (audio.isRunning()) {
         audio.loop();
-        vTaskDelay(10);
+        // Reduce delay to minimum to keep audio buffer full
+        // vTaskDelay(10) is too long and causes buffer underruns/stuttering
+        vTaskDelay(1); 
     }
     audio.stopSong();
 
     xSemaphoreGive(audioSemaphore);
 
-    vTaskSuspend(NULL);
+    vTaskDelete(NULL); // Use vTaskDelete instead of vTaskSuspend to properly clean up
 }
 #endif

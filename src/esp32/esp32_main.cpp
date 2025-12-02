@@ -93,6 +93,7 @@ bool bLED = true;
 #include <t-deck/tdeck_main.h>
 #include <t-deck/tdeck_extern.h>
 #include <t-deck/lv_obj_functions.h>
+#include <t-deck/lv_obj_functions_extern.h>
 #endif
 
 #if defined(BOARD_T_DECK_PRO)
@@ -1269,14 +1270,35 @@ void esp32setup()
     // Start advertising
     NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
     pAdvertising->reset();
-    pAdvertising->setName(strBLEName);  //BLE Local Name
-    pAdvertising->setManufacturerData(strBLEManufData);
-    pAdvertising->addServiceUUID(SERVICE_UUID);
 
-    if(bBLElong)
-        pAdvertising->enableScanResponse(true);    // true ANDROID  false IPhone ab 4.25 sollte true für beiden abgedeckt sein
+    // Prepare advertisement name: shorten for "short" adverts to keep
+    // total adv payload <= 31 bytes. Use a conservative length for short
+    // adverts to avoid NimBLEAdvertisementData overflow when adding UUIDs.
+    std::string advName = strBLEName;
+    if(!bBLElong && advName.size() > 12)
+      advName = advName.substr(0, 12); // keep first 12 chars for short adverts
+
+    pAdvertising->setName(advName);  // BLE Local Name (possibly shortened)
+
+    // Avoid filling the advertisement packet for "short" adverts by
+    // only adding manufacturer data when long adverts are enabled.
+    if (bBLElong)
+    {
+        pAdvertising->setManufacturerData(strBLEManufData);
+        pAdvertising->addServiceUUID(SERVICE_UUID);
+    }
     else
-        pAdvertising->enableScanResponse(false);    // true ANDROID  false IPhone ab 4.25 sollte true für beiden abgedeckt sein
+    {
+        // For short adverts we skip adding the 128-bit service UUID which
+        // consumes significant space. This keeps the advertising payload
+        // small and avoids NimBLE errors. The device is still discoverable
+        // via the (shortened) name.
+    }
+
+    if (bBLElong)
+        pAdvertising->enableScanResponse(true);
+    else
+        pAdvertising->enableScanResponse(false);
     
     pAdvertising->start();
  
@@ -1290,7 +1312,10 @@ void esp32setup()
 
     // Start Audio on T-Deck
     #if defined(BOARD_T_DECK) || defined(BOARD_T_DECK_PLUS)
-    startAudio();
+    // Only start audio if not muted, to avoid unnecessary task creation
+    if (!meshcom_settings.node_mute) {
+        startAudio();
+    }
     #endif
 
     Serial.println("==============");
@@ -1923,15 +1948,23 @@ void esp32loop()
 
         g_ble_uart_is_connected = false;
         isPhoneReady = 0;
+
+        // Update T-Deck header so BT icon reflects disconnected state
+        #if defined(BOARD_T_DECK) || defined(BOARD_T_DECK_PLUS)
+        tdeck_update_header_bt();
+        #endif
     }
 
     // connecting
     if (deviceConnected && !oldDeviceConnected) {
-		// do stuff here on connecting
+ 		// do stuff here on connecting
         oldDeviceConnected = deviceConnected;
-    }
 
-    // check if message from phone to send
+        // Update T-Deck header so BT icon reflects connected state
+        #if defined(BOARD_T_DECK) || defined(BOARD_T_DECK_PLUS)
+        tdeck_update_header_bt();
+        #endif
+    }    // check if message from phone to send
     if(hasMsgFromPhone)
     {
         if(bBLEDEBUG)

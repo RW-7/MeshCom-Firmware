@@ -26,6 +26,9 @@
 using namespace ace_button;
 #include <TFT_eSPI.h>
 #include <lvgl.h>
+#include <WiFi.h>
+#include <udp_functions.h>
+#include <Preferences.h>
 
 #ifdef GPS_L76K
 #include "gps_l76k.h"
@@ -117,6 +120,8 @@ void btn_event_handler_aprs(lv_event_t * e)
                     break;
                 case 'n':
                     isel = 8;
+                    break;
+                default:
                     break;
             }
 
@@ -419,6 +424,32 @@ void btn_event_handler_switch(lv_event_t * e)
             else
             {
                 commandAction((char*)"--wifiap off", false);
+            }
+
+            return;
+        }
+
+        // WIFI (overall enable/disable)
+        if (lv_event_get_target(e) == wifi_sw)
+        {
+            bool enabled = lv_obj_has_state(wifi_sw, LV_STATE_CHECKED);
+            // Persist the WiFi enable flag in Preferences to avoid changing global struct
+            Preferences pref;
+            pref.begin("Credentials", false);
+            pref.putBool("node_wifion", enabled);
+            pref.end();
+
+            if (enabled)
+            {
+                // attempt to start WiFi immediately
+                startWIFI();
+            }
+            else
+            {
+                // disable WiFi and update header
+                WiFi.disconnect(true, true);
+                WiFi.mode(WIFI_OFF); // Explicitly turn off radio
+                tdeck_update_header_wifi();
             }
 
             return;

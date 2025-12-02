@@ -56,6 +56,15 @@ void startWebserver()
     }
 
 #ifdef ESP32
+    // Check if WiFi is actually connected or AP is active before trying to start MDNS
+    bool is_connected = (WiFi.status() == WL_CONNECTED);
+    bool is_ap_active = (WiFi.getMode() == WIFI_MODE_AP) || (WiFi.getMode() == WIFI_MODE_APSTA);
+
+    if (!is_connected && !is_ap_active)
+    {
+        return;
+    }
+
     web_server.stop();
     MDNS.end();
 

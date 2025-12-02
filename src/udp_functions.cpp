@@ -26,6 +26,7 @@ String grc_ids;
 #include <WiFiClient.h>
 #include "esp_wifi.h"
 #include <ESP32Ping.h>
+#include <Preferences.h>
 
 IPAddress node_ip = IPAddress(0,0,0,0);
 IPAddress node_gw = IPAddress(0,0,0,0);
@@ -459,6 +460,24 @@ void sendMeshComUDP()
 
 bool startWIFI()
 {
+  // Respect the persisted overall Wi‑Fi enable flag (node_wifion).
+  // Only apply this guard for T-Deck builds so other ESP32 variants
+  // that don't provide the T-Deck Settings remain unchanged.
+#if defined(BOARD_T_DECK) || defined(BOARD_T_DECK_PLUS)
+  // If the user disabled Wi‑Fi in the Settings UI this preference is false
+  // and we must not start Wi‑Fi even if callers request it.
+  {
+    Preferences pref;
+    pref.begin("Credentials", false);
+    bool node_wifion = pref.getBool("node_wifion", true);
+    pref.end();
+    if(!node_wifion)
+    {
+      Serial.println("[WIFI]...disabled by Settings (node_wifion=false)");
+      return false;
+    }
+  }
+#endif
   if(hasIPaddress)
     return false;
 

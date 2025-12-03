@@ -2,7 +2,10 @@
 // (C) 2016, 2017, 2018, 2018, 2019, 2020 OE1KBC Kurt Baumann
 //
 // 20230326: Version 4.00: START
-
+/**
+ *  @author      Ralph Weich (DD5RW)
+ *  @date        2025-12-03
+ */
 #include <Arduino.h>
 #include <configuration.h>
 #include <RadioLib.h>
@@ -1271,17 +1274,12 @@ void esp32setup()
     NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
     pAdvertising->reset();
 
-    // Prepare advertisement name: shorten for "short" adverts to keep
-    // total adv payload <= 31 bytes. Use a conservative length for short
-    // adverts to avoid NimBLEAdvertisementData overflow when adding UUIDs.
     std::string advName = strBLEName;
     if(!bBLElong && advName.size() > 26)
       advName = advName.substr(0, 26); // keep first 26 chars for short adverts
 
     pAdvertising->setName(advName);  // BLE Local Name (possibly shortened)
 
-    // Avoid filling the advertisement packet for "short" adverts by
-    // only adding manufacturer data when long adverts are enabled.
     if (bBLElong)
     {
         pAdvertising->setManufacturerData(strBLEManufData);
@@ -1290,9 +1288,7 @@ void esp32setup()
     else
     {
         // For short adverts we skip adding the 128-bit service UUID which
-        // consumes significant space. This keeps the advertising payload
-        // small and avoids NimBLE errors. The device is still discoverable
-        // via the (shortened) name.
+    
     }
 
     if (bBLElong)

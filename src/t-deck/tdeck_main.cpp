@@ -71,7 +71,6 @@ static const uint32_t TRACKBALL_CURSOR_SHOW_TIME_MS = 750;
  */
 void initTDeck()
 {
-    // Reduce CPU frequency to 160MHz to save power (120MHz is not supported by ESP32 Arduino Core)
     setCpuFrequencyMhz(160);
 
     Serial.println("[INIT]...initTDeck");

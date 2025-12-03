@@ -1275,8 +1275,8 @@ void esp32setup()
     // total adv payload <= 31 bytes. Use a conservative length for short
     // adverts to avoid NimBLEAdvertisementData overflow when adding UUIDs.
     std::string advName = strBLEName;
-    if(!bBLElong && advName.size() > 12)
-      advName = advName.substr(0, 12); // keep first 12 chars for short adverts
+    if(!bBLElong && advName.size() > 26)
+      advName = advName.substr(0, 26); // keep first 26 chars for short adverts
 
     pAdvertising->setName(advName);  // BLE Local Name (possibly shortened)
 

@@ -6,13 +6,14 @@
  * @author      Ralph Weich (DD5RW)
  * @license     MIT
  * @copyright   Copyright (c) 2025 ICSSW.org
- * @date       2025-11-28
+ * @date       2025-12-03
  */
 
 #include <configuration.h>
 #include <debugconf.h>
 #include "event_functions.h"
 #include "tdeck_extern.h"
+#include "tdeck_helpers.h"
 #include "lv_obj_functions.h"
 #include "lv_obj_functions_extern.h"
 #include <loop_functions.h>
@@ -26,6 +27,13 @@
 using namespace ace_button;
 #include <TFT_eSPI.h>
 #include <lvgl.h>
+#include <WiFi.h>
+#include <esp32/esp32_audio.h>
+
+extern TFT_eSPI tft;
+
+#include <udp_functions.h>
+#include <Preferences.h>
 
 #ifdef GPS_L76K
 #include "gps_l76k.h"
@@ -118,6 +126,8 @@ void btn_event_handler_aprs(lv_event_t * e)
                 case 'n':
                     isel = 8;
                     break;
+                default:
+                    break;
             }
 
             lv_dropdown_set_selected(dropdown_aprs, isel);
@@ -155,6 +165,7 @@ void btn_event_handler_dropdown_modusselect(lv_event_t * e)
             meshcom_settings.node_modus = 1;
             meshcom_settings.node_keyboardlock = true;
             meshcom_settings.node_backlightlock = false;
+            setKeyboardBacklight(0);
             lv_tabview_set_act(tv, 0, LV_ANIM_OFF);
         }
         else
@@ -170,6 +181,7 @@ void btn_event_handler_dropdown_modusselect(lv_event_t * e)
             meshcom_settings.node_modus = 3;
             meshcom_settings.node_keyboardlock = true;
             meshcom_settings.node_backlightlock = true;
+            setKeyboardBacklight(0);
             lv_tabview_set_act(tv, 0, LV_ANIM_OFF);
         }
 
@@ -200,6 +212,29 @@ void btn_event_handler_dropdown_modusselect(lv_event_t * e)
         lv_dropdown_set_selected(dropdown_modusselect, meshcom_settings.node_modus);
 
         lv_dropdown_open(dropdown_modusselect);
+    }
+}
+
+/**
+ * handler for kbl sync switch
+ */
+void btn_event_handler_kbl_sync_sw(lv_event_t * e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    lv_obj_t * obj = lv_event_get_target(e);
+
+    if(code == LV_EVENT_VALUE_CHANGED) {
+        meshcom_settings.node_kbl_sync = lv_obj_has_state(obj, LV_STATE_CHECKED);
+        save_settings();
+        
+        // Apply immediately if display is on
+        if(current_brightness_level > 0 && !meshcom_settings.node_keyboardlock) {
+            if(meshcom_settings.node_kbl_sync) {
+                setKeyboardBacklight(current_brightness_level); // Or just ON? User said "an bzw aus"
+            } else {
+                setKeyboardBacklight(0);
+            }
+        }
     }
 }
 
@@ -394,7 +429,7 @@ void btn_event_handler_switch(lv_event_t * e)
         // MUTE
         if (lv_event_get_target(e) == mute_sw)
         {
-            meshcom_settings.node_mute = lv_obj_has_state(mute_sw, LV_STATE_CHECKED);
+            audio_set_mute(lv_obj_has_state(mute_sw, LV_STATE_CHECKED));
             save_settings();
 
             return;
@@ -419,6 +454,32 @@ void btn_event_handler_switch(lv_event_t * e)
             else
             {
                 commandAction((char*)"--wifiap off", false);
+            }
+
+            return;
+        }
+
+        // WIFI (overall enable/disable)
+        if (lv_event_get_target(e) == wifi_sw)
+        {
+            bool enabled = lv_obj_has_state(wifi_sw, LV_STATE_CHECKED);
+            // Persist the WiFi enable flag in Preferences to avoid changing global struct
+            Preferences pref;
+            pref.begin("Credentials", false);
+            pref.putBool("node_wifion", enabled);
+            pref.end();
+
+            if (enabled)
+            {
+                // attempt to start WiFi immediately
+                startWIFI();
+            }
+            else
+            {
+                // disable WiFi and update header
+                WiFi.disconnect(true, true);
+                WiFi.mode(WIFI_OFF); // Explicitly turn off radio
+                tdeck_update_header_wifi();
             }
 
             return;
@@ -541,6 +602,16 @@ void btn_event_handler_setup(lv_event_t * e)
         sscanf(cNew, "%i", &meshcom_settings.node_gcb[5]);
         if(meshcom_settings.node_gcb[5] < 0 || meshcom_settings.node_gcb[5] > 99999)
             meshcom_settings.node_gcb[5]=0;
+
+        // TX POWER
+        strVar = lv_textarea_get_text(setup_txpower);
+        sprintf(cNew, "%s", strVar.c_str());
+        int iNewPower;
+        sscanf(cNew, "%i", &iNewPower);
+        if(iNewPower != meshcom_settings.node_power)
+        {
+             meshcom_settings.node_power = iNewPower;
+        }
 
         save_settings();
 

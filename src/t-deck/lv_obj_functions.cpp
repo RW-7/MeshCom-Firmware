@@ -6,7 +6,7 @@
  * @author      Ralph Weich (DD5RW)
  * @license     MIT
  * @copyright   Copyright (c) 2025 ICSSW.org
- * @date        2025-11-28
+ * @date        2025-12-03
  */
 
 #include "lv_obj_functions.h"
@@ -26,6 +26,11 @@
 
 #include "event_functions.h"
 #include <lora_setchip.h>
+#include <WiFi.h>
+#include <Preferences.h>
+#include <TFT_eSPI.h>
+
+extern TFT_eSPI tft;
 
 #include <esp32/esp32_flash.h>
 #include <SPIFFS.h>
@@ -60,6 +65,7 @@ lv_obj_t    *setup_grc3;
 lv_obj_t    *setup_grc4;
 lv_obj_t    *setup_grc5;
 lv_obj_t    *setup_utc;
+lv_obj_t    *setup_txpower;
 
 lv_obj_t    *btn_msg_id_label;
 lv_obj_t    *btn_ack_id_label;
@@ -99,16 +105,22 @@ lv_obj_t    *noallmsg_sw;
 lv_obj_t    *gpson_sw;
 lv_obj_t    *track_sw;
 lv_obj_t    *wifiap_sw;
+lv_obj_t    *wifi_sw;
 lv_obj_t    *mute_sw;
 lv_obj_t    *immediate_save_sw;
+//lv_obj_t    *kbl_sync_sw;
 lv_obj_t    *tab_menu_header;
 lv_obj_t    *tab_menu_button;
 lv_obj_t    *tab_menu_icon_label;
+lv_obj_t    *tab_kbl_button;
+lv_obj_t    *tab_kbl_icon_label;
 lv_obj_t    *header_time_label;
 lv_obj_t    *header_sat_icon;
 lv_obj_t    *header_sat_label;
 lv_obj_t    *header_batt_icon;
 lv_obj_t    *header_batt_label;
+lv_obj_t    *header_wifi_icon;
+lv_obj_t    *header_bt_icon;
 lv_obj_t    *header_locator_label;
 
 static bool tab_menu_visible = false;
@@ -155,6 +167,8 @@ static unsigned long last_flush_millis = 0;
 static const unsigned long FLUSH_INTERVAL_MS = 5UL * 60UL * 1000UL; // 5 minutes
 
 static void msg_flush_timer_cb(lv_timer_t *t);
+static lv_timer_t *msg_flush_timer = NULL;
+static lv_timer_t *track_clear_timer = NULL;
 
 static String escape_json(const String &s);
 static String unescape_json(const String &s);
@@ -165,6 +179,8 @@ static void tab_menu_button_event_cb(lv_event_t * e);
 static void tdeck_set_tab_menu_visible(bool show);
 static void update_header_sat_indicator(void);
 static void update_header_batt_indicator(float batt, int proz);
+static void update_header_wifi_indicator(void);
+static void update_header_bt_indicator(void);
 static void update_header_locator_label(void);
 static bool compute_locator_from_settings(char *buffer, size_t len);
 static bool compute_maidenhead_locator(double lat, double lon, char *buffer, size_t len);
@@ -255,9 +271,13 @@ static void tdeck_set_tab_menu_visible(bool show)
     update_tab_button_state(show);
 }
 
-void tdeck_hide_tab_menu(void)
+void tdeck_show_pos_tab()
 {
-    tdeck_set_tab_menu_visible(false);
+    if(tv != NULL)
+    {
+        // Index 2 is "POS" tab
+        lv_tabview_set_act(tv, 2, LV_ANIM_OFF);
+    }
 }
 
 void tdeck_show_tab_menu(void)
@@ -273,6 +293,26 @@ void tdeck_toggle_tab_menu(void)
 bool tdeck_tab_menu_is_visible(void)
 {
     return tab_menu_visible;
+}
+
+static bool kbl_on = false;
+
+static void tab_kbl_button_event_cb(lv_event_t * e)
+{
+    if(lv_event_get_code(e) == LV_EVENT_CLICKED)
+    {
+        kbl_on = !kbl_on;
+        if(kbl_on)
+        {
+            setKeyboardBacklight(255);
+            lv_obj_set_style_text_color(tab_kbl_icon_label, lv_palette_main(LV_PALETTE_YELLOW), LV_PART_MAIN);
+        }
+        else
+        {
+            setKeyboardBacklight(0);
+            lv_obj_set_style_text_color(tab_kbl_icon_label, lv_palette_main(LV_PALETTE_GREY), LV_PART_MAIN);
+        }
+    }
 }
 
 static void tab_menu_button_event_cb(lv_event_t * e)
@@ -361,11 +401,25 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_obj_set_style_text_color(tab_menu_icon_label, lv_palette_main(LV_PALETTE_LIGHT_GREEN), LV_PART_MAIN);
     lv_obj_center(tab_menu_icon_label);
 
+    tab_kbl_button = lv_btn_create(tab_menu_header);
+    lv_obj_set_size(tab_kbl_button, 40, header_height - 8);
+    lv_obj_align(tab_kbl_button, LV_ALIGN_LEFT_MID, 25, 0);
+    lv_obj_add_event_cb(tab_kbl_button, tab_kbl_button_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_set_style_bg_color(tab_kbl_button, header_blue, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(tab_kbl_button, header_blue, LV_PART_MAIN | LV_STATE_CHECKED);
+    lv_obj_set_style_border_width(tab_kbl_button, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(tab_kbl_button, 4, LV_PART_MAIN);
+
+    tab_kbl_icon_label = lv_label_create(tab_kbl_button);
+    lv_label_set_text(tab_kbl_icon_label, LV_SYMBOL_KEYBOARD);
+    lv_obj_set_style_text_color(tab_kbl_icon_label, lv_palette_main(LV_PALETTE_GREY), LV_PART_MAIN);
+    lv_obj_center(tab_kbl_icon_label);
+
     header_time_label = lv_label_create(tab_menu_header);
     lv_label_set_text(header_time_label, "--:--");
     lv_label_set_long_mode(header_time_label, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_color(header_time_label, lv_color_white(), LV_PART_MAIN);
-    lv_obj_align(header_time_label, LV_ALIGN_LEFT_MID, 48, 0);
+    lv_obj_align(header_time_label, LV_ALIGN_LEFT_MID, 60, 0);
 
     header_sat_label = lv_label_create(tab_menu_header);
     lv_label_set_text(header_sat_label, "0");
@@ -376,7 +430,6 @@ void setDisplayLayout(lv_obj_t *parent)
     header_sat_icon = lv_label_create(tab_menu_header);
     lv_label_set_text(header_sat_icon, LV_SYMBOL_GPS); // Symbol stammt von WpZoom (CC BY-SA 3.0, siehe README)
     lv_obj_align_to(header_sat_icon, header_sat_label, LV_ALIGN_OUT_LEFT_MID, -6, 0);
-
     header_batt_label = lv_label_create(tab_menu_header);
     lv_label_set_text(header_batt_label, "0%");
     lv_label_set_long_mode(header_batt_label, LV_LABEL_LONG_CLIP);
@@ -387,14 +440,27 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_label_set_text(header_batt_icon, LV_SYMBOL_BATTERY_EMPTY);
     lv_obj_align_to(header_batt_icon, header_batt_label, LV_ALIGN_OUT_LEFT_MID, -6, 0);
 
+    /* wifi + bluetooth icons (left of battery) */
+    header_wifi_icon = lv_label_create(tab_menu_header);
+    lv_label_set_text(header_wifi_icon, LV_SYMBOL_WIFI);
+    // Slightly increase left offset so wifi icon sits closer to battery icon
+    lv_obj_align_to(header_wifi_icon, header_batt_icon, LV_ALIGN_OUT_LEFT_MID, -12, 0);
+
+    header_bt_icon = lv_label_create(tab_menu_header);
+    lv_label_set_text(header_bt_icon, LV_SYMBOL_BLUETOOTH);
+    // Match spacing with wifi icon (leave a comfortable gap)
+    lv_obj_align_to(header_bt_icon, header_wifi_icon, LV_ALIGN_OUT_LEFT_MID, -12, 0);
+
     header_locator_label = lv_label_create(tab_menu_header);
     lv_label_set_text(header_locator_label, "JJ00AAAA");
     lv_label_set_long_mode(header_locator_label, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_color(header_locator_label, lv_color_white(), LV_PART_MAIN);
-    lv_obj_align(header_locator_label, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_align(header_locator_label, LV_ALIGN_CENTER, -18, 0);
 
     update_header_batt_indicator(global_batt > 0.0f ? global_batt / 1000.0f : 0.0f, global_proz);
     update_header_sat_indicator();
+    update_header_wifi_indicator();
+    update_header_bt_indicator();
     update_header_locator_label();
 
     tv = lv_tabview_create(parent, LV_DIR_TOP, 42);
@@ -620,7 +686,7 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_dropdown_set_options(dropdown_mapselect, getMapDropbox().c_str());
     lv_obj_add_event_cb(dropdown_mapselect, btn_event_handler_dropdown_mapselect, LV_EVENT_ALL, NULL);
 
-    // COUNTRY TAB
+    // COUNTRY
     dropdown_country = lv_dropdown_create(t1);
     lv_dropdown_set_text(dropdown_country, (char*)"CTRY");
     lv_obj_set_pos(dropdown_country, 195, 60);
@@ -636,46 +702,6 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_dropdown_set_options(dropdown_aprs, (char*)"Runner\nCar\nCycle\nBike\nWX\nPhone\nBulli\nHouse\nNode");
     lv_obj_add_event_cb(dropdown_aprs, btn_event_handler_aprs, LV_EVENT_ALL, NULL);
     
-    // MODUSSEL
-    lv_obj_t * btnsetup_modusselect = lv_btn_create(t1);
-    lv_obj_set_pos(btnsetup_modusselect, 195, 0);
-    lv_obj_set_size(btnsetup_modusselect, 80, 25);
-    lv_obj_add_event_cb(btnsetup_modusselect, btn_event_handler_dropdown_modusselect, LV_EVENT_ALL, NULL);
-
-    lv_obj_t * label_btnsetup_modusselect = lv_label_create(btnsetup_modusselect);
-    lv_label_set_text(label_btnsetup_modusselect, "MODUS");
-    lv_obj_center(label_btnsetup_modusselect);
-
-    // MAPSEL
-    lv_obj_t * btnsetup_mapselect = lv_btn_create(t1);
-    lv_obj_set_pos(btnsetup_mapselect, 195, 30);
-    lv_obj_set_size(btnsetup_mapselect, 80, 25);
-    lv_obj_add_event_cb(btnsetup_mapselect, btn_event_handler_dropdown_mapselect, LV_EVENT_ALL, NULL);
-
-    lv_obj_t * label_btnsetup_mapselect = lv_label_create(btnsetup_mapselect);
-    lv_label_set_text(label_btnsetup_mapselect, "MAPS");
-    lv_obj_center(label_btnsetup_mapselect);
-
-    // COUNTRY
-    lv_obj_t * btnsetup_country = lv_btn_create(t1);
-    lv_obj_set_pos(btnsetup_country, 195, 60);
-    lv_obj_set_size(btnsetup_country, 80, 25);
-    lv_obj_add_event_cb(btnsetup_country, btn_event_handler_dropdown_country, LV_EVENT_ALL, NULL);
-
-    lv_obj_t * label_btnsetup_country = lv_label_create(btnsetup_country);
-    lv_label_set_text(label_btnsetup_country, "COUNTRY");
-    lv_obj_center(label_btnsetup_country);
-
-    // APRS
-    lv_obj_t * btnsetup_aprs = lv_btn_create(t1);
-    lv_obj_set_pos(btnsetup_aprs, 195, 92);
-    lv_obj_set_size(btnsetup_aprs, 80, 25);
-    lv_obj_add_event_cb(btnsetup_aprs, btn_event_handler_aprs, LV_EVENT_ALL, NULL);
-
-    lv_obj_t * label_btnsetup_aprs = lv_label_create(btnsetup_aprs);
-    lv_label_set_text(label_btnsetup_aprs, "APRS");
-    lv_obj_center(label_btnsetup_aprs);
-
     // START TONE
     lv_obj_t * btnsetup_stone = lv_btn_create(t1);
     lv_obj_set_pos(btnsetup_stone, 0, 122);
@@ -690,11 +716,31 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_textarea_set_text_selection(setup_stone, false);
     lv_obj_align(setup_stone, LV_ALIGN_TOP_LEFT, 0, 0);
     lv_obj_set_pos(setup_stone, 55, 120);
-    lv_obj_set_size(setup_stone, 220, 30);
+    lv_obj_set_size(setup_stone, 135, 30);
     lv_textarea_set_text(setup_stone, "");
     lv_textarea_set_max_length(setup_stone, 100);
     lv_obj_add_style(setup_stone, &ta_style, LV_PART_MAIN);
     lv_obj_add_style(setup_stone, &ta_input_cursor, LV_PART_CURSOR | LV_STATE_FOCUSED);
+
+    // TX POWER
+    lv_obj_t * btnsetup_txp = lv_btn_create(t1);
+    lv_obj_set_pos(btnsetup_txp, 195, 122);
+    lv_obj_set_size(btnsetup_txp, 50, 25);
+
+    lv_obj_t * label_btnsetup_txp = lv_label_create(btnsetup_txp);
+    lv_label_set_text(label_btnsetup_txp, "TX P");
+    lv_obj_center(label_btnsetup_txp);
+
+    setup_txpower = lv_textarea_create(t1);
+    lv_textarea_set_text_selection(setup_txpower, false);
+    lv_obj_align(setup_txpower, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_set_pos(setup_txpower, 250, 120);
+    lv_obj_set_size(setup_txpower, 55, 30);
+    lv_textarea_set_text(setup_txpower, "");
+    lv_textarea_set_max_length(setup_txpower, 2);
+    lv_obj_add_style(setup_txpower, &ta_style, LV_PART_MAIN);
+    lv_obj_add_style(setup_txpower, &ta_input_cursor, LV_PART_CURSOR | LV_STATE_FOCUSED);
+    lv_textarea_set_accepted_chars(setup_txpower, "0123456789");
 
     // MESSAGE TONE
     lv_obj_t * btnsetup_mtone = lv_btn_create(t1);
@@ -897,6 +943,21 @@ void setDisplayLayout(lv_obj_t *parent)
 
     lv_obj_add_event_cb(gpson_sw, btn_event_handler_switch, LV_EVENT_ALL, NULL);
 
+    // WIFI ON/OFF (overall Wi-Fi enable/disable)
+    lv_obj_t * btn_wifi = lv_btn_create(t1);
+    lv_obj_set_pos(btn_wifi, 185, 342);
+    lv_obj_set_size(btn_wifi, 50, 25);
+
+    lv_obj_t * btn_wifi_label = lv_label_create(btn_wifi);
+    lv_label_set_text(btn_wifi_label, "WIFI");
+    lv_obj_center(btn_wifi_label);
+
+    wifi_sw = lv_switch_create(t1);
+    lv_obj_set_pos(wifi_sw, 245, 342);
+    lv_obj_set_size(wifi_sw, 45, 25);
+
+    lv_obj_add_event_cb(wifi_sw, btn_event_handler_switch, LV_EVENT_ALL, NULL);
+
     // UTC
     lv_obj_t * btnsetup_utc = lv_btn_create(t1);
     lv_obj_set_pos(btnsetup_utc, 0, 342);
@@ -920,7 +981,7 @@ void setDisplayLayout(lv_obj_t *parent)
 
     // TRACK ON/OFF
     lv_obj_t * btn_track = lv_btn_create(t1);
-    lv_obj_set_pos(btn_track, 185, 340);
+    lv_obj_set_pos(btn_track, 210, 410); 
     lv_obj_set_size(btn_track, 50, 25);
 
     lv_obj_t * btn_track_label = lv_label_create(btn_track);
@@ -928,10 +989,11 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_obj_center(btn_track_label);
 
     track_sw = lv_switch_create(t1);
-    lv_obj_set_pos(track_sw, 245, 340);
+    lv_obj_set_pos(track_sw, 265, 410); 
     lv_obj_set_size(track_sw, 45, 25);
 
     lv_obj_add_event_cb(track_sw, btn_event_handler_switch, LV_EVENT_ALL, NULL);
+
 
     // MUTE
     lv_obj_t * btnsetup_mute = lv_btn_create(t1);
@@ -954,7 +1016,7 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_obj_set_size(btn_immsave, 150, 25);
 
     lv_obj_t * btn_immsave_label = lv_label_create(btn_immsave);
-    lv_label_set_text(btn_immsave_label, "IMMEDIATE SAVE");
+    lv_label_set_text(btn_immsave_label, "SAVE MSG");
     lv_obj_center(btn_immsave_label);
 
     immediate_save_sw = lv_switch_create(t1);
@@ -989,14 +1051,14 @@ void setDisplayLayout(lv_obj_t *parent)
 
     // VERSION
     lv_obj_t * btnsetup_version = lv_btn_create(t1);
-    lv_obj_set_pos(btnsetup_version, 185, 445);
-    lv_obj_set_size(btnsetup_version, 105, 30);
+    lv_obj_set_pos(btnsetup_version, 110, 445);
+    lv_obj_set_size(btnsetup_version, 180, 30);
 
     lv_obj_t * label_btnsetup_version = lv_label_create(btnsetup_version);
     char sv[50];
     sprintf(sv, "MeshCom %s%s", SOURCE_VERSION, SOURCE_VERSION_SUB);
     lv_label_set_text(label_btnsetup_version, sv);
-    lv_obj_center(label_btnsetup_version);
+    lv_obj_center(btnlabel_setup);
 
     ////////////////////////////////////////////////////////////////////////////
     // TEXT OUTPUT
@@ -1591,7 +1653,26 @@ void set_map(int iMap)
  */
 void tft_on()
 {
+    tft.writecommand(TFT_SLPOUT);
+    tft.writecommand(TFT_DISPON);
+    
+    // Ensure we have a valid brightness to restore
+    if(pre_sleep_brightness_level == 0) pre_sleep_brightness_level = BRIGHTNESS_STEPS;
+
     resetBrightness();
+
+    // Force sync keyboard backlight
+    if(meshcom_settings.node_kbl_sync && !meshcom_settings.node_keyboardlock) {
+        // Force ON like the button
+        setKeyboardBacklight(255);
+        
+        // Update button state visual
+        if(tab_kbl_icon_label) {
+            lv_obj_set_style_text_color(tab_kbl_icon_label, lv_palette_main(LV_PALETTE_YELLOW), LV_PART_MAIN);
+            kbl_on = true;
+        }
+    }
+
     tdeck_tft_timer = millis();
 }
 
@@ -1601,7 +1682,22 @@ void tft_on()
 void tft_off()
 {
     if (!meshcom_settings.node_backlightlock)
-        setBrightness(0);
+    {
+        // Only turn off if not already off to avoid recursion loop with setBrightness(0)
+        if(current_brightness_level > 0) {
+             setBrightness(0);
+        }
+        setKeyboardBacklight(0);
+
+        // Update state and UI to reflect that KBL is now OFF
+        kbl_on = false;
+        if(tab_kbl_icon_label) {
+            lv_obj_set_style_text_color(tab_kbl_icon_label, lv_palette_main(LV_PALETTE_GREY), LV_PART_MAIN);
+        }
+
+        tft.writecommand(TFT_DISPOFF);
+        tft.writecommand(TFT_SLPIN);
+    }
 }
 
 
@@ -1610,12 +1706,21 @@ static void update_header_sat_indicator(void)
     if(header_sat_label == NULL || header_sat_icon == NULL)
         return;
 
+    // If GPS was turned off via the command/UI show the icon as 'off' (white)
+    if(!bGPSON)
+    {
+        lv_label_set_text(header_sat_label, "0");
+        lv_obj_set_style_text_color(header_sat_icon, lv_color_white(), LV_PART_MAIN);
+        return;
+    }
+
     char sat_text[8];
     snprintf(sat_text, sizeof(sat_text), "%u", (unsigned int)posinfo_satcount);
     lv_label_set_text(header_sat_label, sat_text);
 
-    lv_color_t icon_color = posinfo_fix ? lv_palette_main(LV_PALETTE_GREEN)
-                                        : lv_palette_main(LV_PALETTE_RED);
+    // Show green when we have a fix OR at least some satellites visible, red when GPS on but no sats/fix
+    lv_color_t icon_color = (posinfo_fix || posinfo_satcount > 0) ? lv_palette_main(LV_PALETTE_GREEN)
+                                                                         : lv_palette_main(LV_PALETTE_RED);
     lv_obj_set_style_text_color(header_sat_icon, icon_color, LV_PART_MAIN);
 }
 
@@ -1662,6 +1767,138 @@ static void update_header_batt_indicator(float batt, int proz)
 
     lv_label_set_text(header_batt_icon, icon);
     lv_obj_set_style_text_color(header_batt_icon, icon_color, LV_PART_MAIN);
+}
+
+/* WiFi / Bluetooth status in header
+ * - WiFi: green when connected (STA or AP), red when configured but not connected,
+ *   white + cross when WiFi is disabled/unused.
+ * - Bluetooth: green when a device is connected, red when advertising but no connection,
+ *   white + cross when BLE is disabled.
+ */
+extern bool deviceConnected; // from esp32_main.cpp
+
+static void update_header_wifi_indicator(void)
+{
+    if(header_wifi_icon == NULL)
+        return;
+
+    // If the user explicitly disabled Wi‑Fi via the T‑Deck Settings, show
+    // the Wi‑Fi icon as 'off' (white) regardless of configured SSID.
+    {
+        Preferences pref;
+        pref.begin("Credentials", false);
+        bool node_wifion = pref.getBool("node_wifion", true);
+        pref.end();
+
+        if(!node_wifion)
+        {
+            if(bDEBUG)
+            {
+                Serial.printf("[TDECK]...update_header_wifi_indicator: node_wifion=false, WiFi.status=%d, ssid='%s'\n", (int)WiFi.status(), meshcom_settings.node_ssid);
+            }
+            lv_obj_set_style_text_color(header_wifi_icon, lv_color_white(), LV_PART_MAIN);
+            lv_label_set_text(header_wifi_icon, LV_SYMBOL_WIFI);
+            return;
+        }
+    }
+
+    // AP mode considered connected
+    // Check actual WiFi state for Green (Connected or AP created)
+    bool is_connected = (WiFi.status() == WL_CONNECTED);
+    bool is_ap_active = (WiFi.getMode() == WIFI_MODE_AP) || (WiFi.getMode() == WIFI_MODE_APSTA);
+
+    if(is_connected || is_ap_active)
+    {
+        lv_obj_set_style_text_color(header_wifi_icon, lv_palette_main(LV_PALETTE_GREEN), LV_PART_MAIN);
+        lv_label_set_text(header_wifi_icon, LV_SYMBOL_WIFI);
+        return;
+    }
+
+    // If configured/enabled but not yet connected/active -> Red
+    // Only if global switch is ON (which we checked above, but double check logic)
+    if(bWIFIAP || bWEBSERVER || (strlen(meshcom_settings.node_ssid) > 1))
+    {
+        lv_obj_set_style_text_color(header_wifi_icon, lv_palette_main(LV_PALETTE_RED), LV_PART_MAIN);
+        lv_label_set_text(header_wifi_icon, LV_SYMBOL_WIFI);
+    }
+    else
+    {
+        // Not enabled/configured -> White
+        lv_obj_set_style_text_color(header_wifi_icon, lv_color_white(), LV_PART_MAIN);
+        lv_label_set_text(header_wifi_icon, LV_SYMBOL_WIFI);
+    }
+}
+
+static void update_header_bt_indicator(void)
+{
+    if(header_bt_icon == NULL)
+        return;
+    // Always render the icon glyph in white
+    lv_obj_set_style_text_color(header_bt_icon, lv_color_white(), LV_PART_MAIN);
+    lv_label_set_text(header_bt_icon, LV_SYMBOL_BLUETOOTH);
+
+    // Ensure a square touch/visual area for the icon
+    lv_obj_set_size(header_bt_icon, 22, 22);
+    lv_obj_set_style_text_align(header_bt_icon, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(header_bt_icon, 0, LV_PART_MAIN);
+
+    // Default: no border / transparent background
+    lv_obj_set_style_border_width(header_bt_icon, 0, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(header_bt_icon, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_radius(header_bt_icon, 12, LV_PART_MAIN);
+
+    // deviceConnected is set by NimBLE callbacks
+    if(deviceConnected)
+    {
+        // Connected: white glyph with green ring
+        lv_obj_set_style_border_width(header_bt_icon, 2, LV_PART_MAIN);
+        lv_obj_set_style_border_color(header_bt_icon, lv_palette_main(LV_PALETTE_GREEN), LV_PART_MAIN);
+    }
+    else
+    {
+        // BLE advertising active: white glyph with blue ring
+        if(strlen(cBLEName) > 1)
+        {
+            lv_obj_set_style_border_width(header_bt_icon, 2, LV_PART_MAIN);
+            lv_obj_set_style_border_color(header_bt_icon, lv_palette_main(LV_PALETTE_BLUE), LV_PART_MAIN);
+        }
+        else
+        {
+            // BLE disabled: plain white glyph, no border (default above)
+        }
+    }
+}
+
+/* Public wrappers so other modules can trigger a header refresh */
+void tdeck_update_header_wifi(void)
+{
+    update_header_wifi_indicator();
+}
+
+void tdeck_update_header_bt(void)
+{
+    update_header_bt_indicator();
+}
+
+/* Pause/resume a small set of UI timers when the display is turned off/on.
+ * This reduces CPU activity while the screen is dark.
+ */
+void tdeck_pause_lv_timers(void)
+{
+    if(msg_flush_timer != NULL)
+        lv_timer_pause(msg_flush_timer);
+
+    if(track_clear_timer != NULL)
+        lv_timer_pause(track_clear_timer);
+}
+
+void tdeck_resume_lv_timers(void)
+{
+    if(msg_flush_timer != NULL)
+        lv_timer_resume(msg_flush_timer);
+
+    if(track_clear_timer != NULL)
+        lv_timer_resume(track_clear_timer);
 }
 
 static void apply_tab_bar_styles(void)
@@ -1850,10 +2087,10 @@ static void init_msg_tab_bar(lv_obj_t *parent)
     msg_tab_entries.clear();
     msg_active_tab_index = -1;
     // load persisted messages from filesystem (if any)
-    load_persisted_messages();
+    // load_persisted_messages(); // Moved to explicit call to save RAM for BLE init
 
     // create a periodic timer to flush messages after a time interval
-    lv_timer_create(msg_flush_timer_cb, 60 * 1000, NULL); // check every 60s
+    msg_flush_timer = lv_timer_create(msg_flush_timer_cb, 60 * 1000, NULL); // check every 60s
 
     msg_tabs_update_hint();
 }
@@ -2024,7 +2261,14 @@ static void msg_tabs_add_message(const String &group, const MsgBubble &bubble)
         }
     }
 
-    msg_tabs_select_index(index);
+    // Only switch to the new tab if it is NOT a System message,
+    // or if we don't have any active tab yet.
+    // This prevents System logs from pulling focus away from user conversations.
+    // Also do NOT switch tabs if we are currently loading messages from file.
+    if (!loading_messages_from_file && (bubble.type != MsgBubbleType::System || msg_active_tab_index < 0))
+    {
+        msg_tabs_select_index(index);
+    }
 }
 
 static void msg_render_active_tab(void)
@@ -2180,6 +2424,24 @@ static void msg_list_append_bubble(const MsgBubble &bubble)
     }
 
     // timestamp moved to footer (bottom-right)
+    /*
+    lv_obj_t *footer_row = lv_obj_create(bubble_obj);
+    lv_obj_set_width(footer_row, content_max_width);
+    lv_obj_set_height(footer_row, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(footer_row, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(footer_row, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(footer_row, 0, LV_PART_MAIN);
+    lv_obj_clear_flag(footer_row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(footer_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(footer_row, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    lv_obj_t *time_label = lv_label_create(footer_row);
+    lv_label_set_text(time_label, bubble.timestamp.c_str());
+    lv_obj_set_style_text_color(time_label, lv_palette_darken(LV_PALETTE_GREY, 1), LV_PART_MAIN);
+    lv_label_set_long_mode(time_label, LV_LABEL_LONG_CLIP);
+    lv_obj_set_width(time_label, LV_SIZE_CONTENT);
+    lv_obj_set_style_text_align(time_label, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
+    */
 
     lv_obj_t *body = lv_label_create(bubble_obj);
     lv_label_set_text(body, bubble.body.c_str());
@@ -2437,11 +2699,25 @@ static void save_persisted_messages(void)
     if(persisted_msgs.empty())
         return;
 
-    if(!SPIFFS.begin(true))
+    // Attempt to initialize SPIFFS only once and cache the result to avoid
+    // flooding the serial console when no SPIFFS partition is present.
+    static bool spiffs_init_attempted = false;
+    static bool spiffs_available = false;
+    if(!spiffs_init_attempted)
     {
-        Serial.println("[MSG] SPIFFS begin failed (save)");
-        return;
+        spiffs_init_attempted = true;
+        if(SPIFFS.begin(true))
+        {
+            spiffs_available = true;
+        }
+        else
+        {
+            spiffs_available = false;
+            Serial.println("[MSG] SPIFFS begin failed (save) — partition not found");
+        }
     }
+    if(!spiffs_available)
+        return;
 
     const char *tmp = "/messages.jsonl.tmp";
     File f = SPIFFS.open(tmp, FILE_WRITE);
@@ -2477,7 +2753,7 @@ static void save_persisted_messages(void)
         SPIFFS.remove(PERSISTED_MSG_FILE);
     SPIFFS.rename(tmp, PERSISTED_MSG_FILE);
 
-    SPIFFS.end();
+    // SPIFFS.end(); // Do not unmount
     // update flush timestamp and reset unsaved counter
     last_flush_millis = millis();
     unsaved_msgs_count = 0;
@@ -2488,16 +2764,31 @@ static void load_persisted_messages(void)
     persisted_msgs.clear();
     loading_messages_from_file = true;
 
-    if(!SPIFFS.begin(true))
+    // Use the same one-time SPIFFS init logic as save_persisted_messages
+    static bool spiffs_init_attempted = false;
+    static bool spiffs_available = false;
+    if(!spiffs_init_attempted)
     {
-        Serial.println("[MSG] SPIFFS begin failed (load)");
+        spiffs_init_attempted = true;
+        if(SPIFFS.begin(true))
+        {
+            spiffs_available = true;
+        }
+        else
+        {
+            spiffs_available = false;
+            Serial.println("[MSG] SPIFFS begin failed (load) — partition not found");
+        }
+    }
+    if(!spiffs_available)
+    {
         loading_messages_from_file = false;
         return;
     }
 
     if(!SPIFFS.exists(PERSISTED_MSG_FILE))
     {
-        SPIFFS.end();
+        // SPIFFS.end(); // Do not unmount
         loading_messages_from_file = false;
         return;
     }
@@ -2506,7 +2797,7 @@ static void load_persisted_messages(void)
     if(!f)
     {
         Serial.println("[MSG] Failed to open messages file for reading");
-        SPIFFS.end();
+        // SPIFFS.end(); // Do not unmount
         loading_messages_from_file = false;
         return;
     }
@@ -2566,7 +2857,7 @@ static void load_persisted_messages(void)
     }
 
     f.close();
-    SPIFFS.end();
+    // SPIFFS.end(); // Do not unmount
 
     // populate msg_tab_entries with loaded messages
     for(const auto &p : persisted_msgs)
@@ -2845,6 +3136,9 @@ void tdeck_refresh_SET_view()
     sprintf(vChar, "%i", meshcom_settings.node_alt);
     lv_textarea_set_text(setup_alt, vChar);
 
+    sprintf(vChar, "%i", meshcom_settings.node_power);
+    lv_textarea_set_text(setup_txpower, vChar);
+
     lv_textarea_set_text(setup_stone, meshcom_settings.node_audio_start.c_str());
     lv_textarea_set_text(setup_mtone, meshcom_settings.node_audio_msg.c_str());
     lv_textarea_set_text(setup_name, meshcom_settings.node_name);
@@ -2900,11 +3194,23 @@ void tdeck_refresh_SET_view()
         lv_obj_add_state(mute_sw, LV_STATE_CHECKED);
     else
         lv_obj_clear_state(mute_sw, LV_STATE_CHECKED);
+    // IMMEDIATE SAVE
+    if (meshcom_settings.node_immediate_save)
+        lv_obj_add_state(immediate_save_sw, LV_STATE_CHECKED);
+    else
+        lv_obj_clear_state(immediate_save_sw, LV_STATE_CHECKED);
     // WIFIAP
     if (bWIFIAP)
         lv_obj_add_state(wifiap_sw, LV_STATE_CHECKED);
     else
         lv_obj_clear_state(wifiap_sw, LV_STATE_CHECKED);
+    // BTN LOCK
+    /*
+    if (meshcom_settings.node_keyboardlock)
+        lv_obj_add_state(kbl_sync_sw, LV_STATE_CHECKED);
+    else
+        lv_obj_clear_state(kbl_sync_sw, LV_STATE_CHECKED);
+    */
 }
 
 char ctrack[300];
@@ -2914,7 +3220,10 @@ static void msg_focus_and_alert(bool bWithAudio)
     if(!meshcom_settings.node_keyboardlock)
         tft_on();
 
-    if(tv != NULL)
+    // Only switch to MSG tab if it's an important message (with audio/alert)
+    // This prevents System messages (bWithAudio=false) from hijacking the view
+    // during startup or normal operation.
+    if(tv != NULL && bWithAudio)
     {
         int active = lv_tabview_get_tab_act(tv);
         if(active != 1 && active != 7)
@@ -2932,17 +3241,40 @@ static void msg_focus_and_alert(bool bWithAudio)
     }
 }
 
+// Timer used to clear the temporary "POSITION SENT" text
+
+static void tdeck_track_clear_cb(lv_timer_t *t)
+{
+    // Refresh the normal track view (will delete this timer when done)
+    tdeck_refresh_track_view();
+    if(t != NULL)
+        lv_timer_del(t);
+    track_clear_timer = NULL;
+}
+
 /**
  * show GPS Posítion sent
  */
 void tdeck_send_track_view()
 {
-    if(bDisplayTrack)
-        snprintf(ctrack, sizeof(ctrack), "\n\n\n\n       TRACK\n   POSITION SENT\n");
+    if(track_ta == NULL)
+        return;
+
+    if(iKeyBoardType == 1)
+        snprintf(ctrack, sizeof(ctrack), "\n\n\n\n\n\n        GPS\n   POSITION SENT\n");
     else
         snprintf(ctrack, sizeof(ctrack), "\n\n\n\n        GPS\n   POSITION SENT\n");
 
     lv_textarea_set_text(track_ta, ctrack);
+
+    // show the message briefly, then restore the normal track view
+    // delete any existing timer and create a new short one (2000ms)
+    if(track_clear_timer != NULL)
+    {
+        lv_timer_del(track_clear_timer);
+        track_clear_timer = NULL;
+    }
+    track_clear_timer = lv_timer_create(tdeck_track_clear_cb, 2000, NULL);
 }
 
 void tdeck_add_system_message(const char *text)
@@ -3104,7 +3436,11 @@ void tdeck_add_MSG(aprsMessage aprsmsg, bool bWithAudio)
     bubble.body = payload;
 
     msg_tabs_add_message(conversation, bubble);
-    msg_focus_and_alert(bWithAudio);
+    
+    // Only focus and alert if NOT loading from file
+    if (!loading_messages_from_file) {
+        msg_focus_and_alert(bWithAudio);
+    }
 }                  
 
 /**
@@ -3141,7 +3477,11 @@ void tdeck_add_MSG(String callsign, String path, String message, bool bWithAudio
         conversation = tab_override;
 
     msg_tabs_add_message(conversation, bubble);
-    msg_focus_and_alert(bWithAudio);
+    
+    // Only focus and alert if NOT loading from file
+    if (!loading_messages_from_file) {
+        msg_focus_and_alert(bWithAudio);
+    }
 }
 
 void tdeck_reset_msg_tabs(void)
@@ -3149,16 +3489,41 @@ void tdeck_reset_msg_tabs(void)
     // Clear UI tabs (buttons and displayed bubbles), but preserve persisted messages
     msg_tabs_clear_all();
 
+    // If persisted_msgs is empty, try loading from file (first run after boot)
+    if(persisted_msgs.empty())
+    {
+        load_persisted_messages();
+    }
+
     // Re-populate UI from persisted messages without re-persisting them
     bool prev_loading = loading_messages_from_file;
     loading_messages_from_file = true;
+    
+    // Use a copy or index-based iteration if persisted_msgs is modified during iteration
+    // But here we just read.
+    // Add a small delay or yield if there are many messages to prevent WDT trigger
+    int count = 0;
     for(const auto &p : persisted_msgs)
     {
         msg_tabs_add_message(p.first, p.second);
+        count++;
+        if (count % 5 == 0) {
+             // Yield to other tasks to prevent watchdog timeout
+             vTaskDelay(1);
+             // Feed watchdog explicitly if needed, but vTaskDelay usually allows IDLE task to run
+        }
     }
     loading_messages_from_file = prev_loading;
 
     // Select first tab if available
     if(!msg_tab_entries.empty())
         msg_tabs_select_index(0);
+    
+    // Force a screen refresh to ensure UI is updated
+    lv_task_handler();
+}
+
+void tdeck_hide_tab_menu(void)
+{
+    tdeck_set_tab_menu_visible(false);
 }

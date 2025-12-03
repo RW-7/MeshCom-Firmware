@@ -6,7 +6,7 @@
  * @author      Ralph Weich (DD5RW)
  * @license     MIT
  * @copyright   Copyright (c) 2025 ICSSW.org
- * @date        2025-11-28
+ * @date        2025-12-03
  */
 
 #ifndef _LV_OBJ_FUNCTIONS_EXTERN_H_
@@ -42,6 +42,7 @@ extern lv_obj_t    *setup_grc3;
 extern lv_obj_t    *setup_grc4;
 extern lv_obj_t    *setup_grc5;
 extern lv_obj_t    *setup_utc;
+extern lv_obj_t    *setup_txpower;
 
 extern lv_obj_t    *btn_msg_id_label;
 extern lv_obj_t    *btn_ack_id_label;
@@ -73,7 +74,14 @@ extern lv_obj_t    *noallmsg_sw;
 extern lv_obj_t    *gpson_sw;
 extern lv_obj_t    *track_sw;
 extern lv_obj_t    *wifiap_sw;
+extern lv_obj_t    *wifi_sw;
 extern lv_obj_t    *mute_sw;
 extern lv_obj_t    *immediate_save_sw;
+
+/* helper functions to update header icons from other modules */
+void tdeck_update_header_wifi(void);
+void tdeck_update_header_bt(void);
+void tdeck_pause_lv_timers(void);
+void tdeck_resume_lv_timers(void);
 
 #endif // _LV_OBJ_FUNCTIONS_EXTERN_H_

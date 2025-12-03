@@ -242,7 +242,7 @@ extern uint8_t mheardPathLen[MAX_MHPATH];
 
 extern char cTimeSource[10];
 
-extern char cBLEName[50];
+extern char cBLEName[60];
 
 // SOFTSER global variables
 extern String strSOFTSER_BUF;

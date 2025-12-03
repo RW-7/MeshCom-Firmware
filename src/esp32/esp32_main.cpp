@@ -1203,7 +1203,7 @@ void esp32setup()
 
     // Create the BLE Device & WiFiAP
     sprintf(cBLEName, "M%s-%02x%02x-%s", g_ble_dev_name, dmac[1], dmac[0], meshcom_settings.node_call);
-    char cManufData[50]={0};
+    char cManufData[60]={0};
     sprintf(cManufData, "MCM%s-%02x%02x-%s", g_ble_dev_name,  dmac[1], dmac[0], meshcom_settings.node_call);
     
     
@@ -2644,7 +2644,8 @@ void esp32loop()
 
     // WOR/KBC not necesary     delay(100);
 
-    yield();
+    // yield();
+    delay(5); // Save power by allowing IDLE task to run
 }
 
 

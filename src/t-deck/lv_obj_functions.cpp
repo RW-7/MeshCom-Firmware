@@ -65,6 +65,7 @@ lv_obj_t    *setup_grc3;
 lv_obj_t    *setup_grc4;
 lv_obj_t    *setup_grc5;
 lv_obj_t    *setup_utc;
+lv_obj_t    *setup_txpower;
 
 lv_obj_t    *btn_msg_id_label;
 lv_obj_t    *btn_ack_id_label;
@@ -107,7 +108,7 @@ lv_obj_t    *wifiap_sw;
 lv_obj_t    *wifi_sw;
 lv_obj_t    *mute_sw;
 lv_obj_t    *immediate_save_sw;
-lv_obj_t    *kbl_sync_sw;
+//lv_obj_t    *kbl_sync_sw;
 lv_obj_t    *tab_menu_header;
 lv_obj_t    *tab_menu_button;
 lv_obj_t    *tab_menu_icon_label;
@@ -294,9 +295,10 @@ bool tdeck_tab_menu_is_visible(void)
     return tab_menu_visible;
 }
 
+static bool kbl_on = false;
+
 static void tab_kbl_button_event_cb(lv_event_t * e)
 {
-    static bool kbl_on = false;
     if(lv_event_get_code(e) == LV_EVENT_CLICKED)
     {
         kbl_on = !kbl_on;
@@ -401,7 +403,7 @@ void setDisplayLayout(lv_obj_t *parent)
 
     tab_kbl_button = lv_btn_create(tab_menu_header);
     lv_obj_set_size(tab_kbl_button, 40, header_height - 8);
-    lv_obj_align(tab_kbl_button, LV_ALIGN_LEFT_MID, 40, 0);
+    lv_obj_align(tab_kbl_button, LV_ALIGN_LEFT_MID, 25, 0);
     lv_obj_add_event_cb(tab_kbl_button, tab_kbl_button_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_set_style_bg_color(tab_kbl_button, header_blue, LV_PART_MAIN);
     lv_obj_set_style_bg_color(tab_kbl_button, header_blue, LV_PART_MAIN | LV_STATE_CHECKED);
@@ -417,7 +419,7 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_label_set_text(header_time_label, "--:--");
     lv_label_set_long_mode(header_time_label, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_color(header_time_label, lv_color_white(), LV_PART_MAIN);
-    lv_obj_align(header_time_label, LV_ALIGN_LEFT_MID, 88, 0);
+    lv_obj_align(header_time_label, LV_ALIGN_LEFT_MID, 60, 0);
 
     header_sat_label = lv_label_create(tab_menu_header);
     lv_label_set_text(header_sat_label, "0");
@@ -684,17 +686,13 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_dropdown_set_options(dropdown_mapselect, getMapDropbox().c_str());
     lv_obj_add_event_cb(dropdown_mapselect, btn_event_handler_dropdown_mapselect, LV_EVENT_ALL, NULL);
 
-    // KBL SYNC SWITCH
-    kbl_sync_sw = lv_switch_create(t1);
-    lv_obj_set_pos(kbl_sync_sw, 195, 60);
-    lv_obj_set_size(kbl_sync_sw, 40, 20);
-    if(meshcom_settings.node_kbl_sync) lv_obj_add_state(kbl_sync_sw, LV_STATE_CHECKED);
-    lv_obj_add_event_cb(kbl_sync_sw, btn_event_handler_kbl_sync_sw, LV_EVENT_ALL, NULL);
-    
-    lv_obj_t * kbl_sync_label = lv_label_create(t1);
-    lv_label_set_text(kbl_sync_label, "KBL SYNC");
-    lv_obj_set_pos(kbl_sync_label, 245, 62);
-    lv_obj_set_style_text_color(kbl_sync_label, lv_color_black(), LV_PART_MAIN);
+    // COUNTRY
+    dropdown_country = lv_dropdown_create(t1);
+    lv_dropdown_set_text(dropdown_country, (char*)"CTRY");
+    lv_obj_set_pos(dropdown_country, 195, 60);
+    lv_obj_set_size(dropdown_country, 110, 25);
+    lv_dropdown_set_options(dropdown_country, getCountryDropbox().c_str());
+    lv_obj_add_event_cb(dropdown_country, btn_event_handler_dropdown_country, LV_EVENT_ALL, NULL);
 
     // APRS TAB
     dropdown_aprs = lv_dropdown_create(t1);
@@ -718,11 +716,31 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_textarea_set_text_selection(setup_stone, false);
     lv_obj_align(setup_stone, LV_ALIGN_TOP_LEFT, 0, 0);
     lv_obj_set_pos(setup_stone, 55, 120);
-    lv_obj_set_size(setup_stone, 220, 30);
+    lv_obj_set_size(setup_stone, 135, 30);
     lv_textarea_set_text(setup_stone, "");
     lv_textarea_set_max_length(setup_stone, 100);
     lv_obj_add_style(setup_stone, &ta_style, LV_PART_MAIN);
     lv_obj_add_style(setup_stone, &ta_input_cursor, LV_PART_CURSOR | LV_STATE_FOCUSED);
+
+    // TX POWER
+    lv_obj_t * btnsetup_txp = lv_btn_create(t1);
+    lv_obj_set_pos(btnsetup_txp, 195, 122);
+    lv_obj_set_size(btnsetup_txp, 50, 25);
+
+    lv_obj_t * label_btnsetup_txp = lv_label_create(btnsetup_txp);
+    lv_label_set_text(label_btnsetup_txp, "TX P");
+    lv_obj_center(label_btnsetup_txp);
+
+    setup_txpower = lv_textarea_create(t1);
+    lv_textarea_set_text_selection(setup_txpower, false);
+    lv_obj_align(setup_txpower, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_set_pos(setup_txpower, 250, 120);
+    lv_obj_set_size(setup_txpower, 55, 30);
+    lv_textarea_set_text(setup_txpower, "");
+    lv_textarea_set_max_length(setup_txpower, 2);
+    lv_obj_add_style(setup_txpower, &ta_style, LV_PART_MAIN);
+    lv_obj_add_style(setup_txpower, &ta_input_cursor, LV_PART_CURSOR | LV_STATE_FOCUSED);
+    lv_textarea_set_accepted_chars(setup_txpower, "0123456789");
 
     // MESSAGE TONE
     lv_obj_t * btnsetup_mtone = lv_btn_create(t1);
@@ -1637,13 +1655,22 @@ void tft_on()
 {
     tft.writecommand(TFT_SLPOUT);
     tft.writecommand(TFT_DISPON);
+    
+    // Ensure we have a valid brightness to restore
+    if(pre_sleep_brightness_level == 0) pre_sleep_brightness_level = BRIGHTNESS_STEPS;
+
     resetBrightness();
 
     // Force sync keyboard backlight
     if(meshcom_settings.node_kbl_sync && !meshcom_settings.node_keyboardlock) {
-        uint8_t val = current_brightness_level;
-        uint8_t kbl_val = (val >= BRIGHTNESS_STEPS) ? 255 : (val * 16);
-        setKeyboardBacklight(kbl_val);
+        // Force ON like the button
+        setKeyboardBacklight(255);
+        
+        // Update button state visual
+        if(tab_kbl_icon_label) {
+            lv_obj_set_style_text_color(tab_kbl_icon_label, lv_palette_main(LV_PALETTE_YELLOW), LV_PART_MAIN);
+            kbl_on = true;
+        }
     }
 
     tdeck_tft_timer = millis();
@@ -1661,6 +1688,13 @@ void tft_off()
              setBrightness(0);
         }
         setKeyboardBacklight(0);
+
+        // Update state and UI to reflect that KBL is now OFF
+        kbl_on = false;
+        if(tab_kbl_icon_label) {
+            lv_obj_set_style_text_color(tab_kbl_icon_label, lv_palette_main(LV_PALETTE_GREY), LV_PART_MAIN);
+        }
+
         tft.writecommand(TFT_DISPOFF);
         tft.writecommand(TFT_SLPIN);
     }
@@ -3102,6 +3136,9 @@ void tdeck_refresh_SET_view()
     sprintf(vChar, "%i", meshcom_settings.node_alt);
     lv_textarea_set_text(setup_alt, vChar);
 
+    sprintf(vChar, "%i", meshcom_settings.node_power);
+    lv_textarea_set_text(setup_txpower, vChar);
+
     lv_textarea_set_text(setup_stone, meshcom_settings.node_audio_start.c_str());
     lv_textarea_set_text(setup_mtone, meshcom_settings.node_audio_msg.c_str());
     lv_textarea_set_text(setup_name, meshcom_settings.node_name);
@@ -3168,10 +3205,12 @@ void tdeck_refresh_SET_view()
     else
         lv_obj_clear_state(wifiap_sw, LV_STATE_CHECKED);
     // BTN LOCK
+    /*
     if (meshcom_settings.node_keyboardlock)
         lv_obj_add_state(kbl_sync_sw, LV_STATE_CHECKED);
     else
         lv_obj_clear_state(kbl_sync_sw, LV_STATE_CHECKED);
+    */
 }
 
 char ctrack[300];

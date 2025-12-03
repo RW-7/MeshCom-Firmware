@@ -28,6 +28,10 @@ using namespace ace_button;
 #include <TFT_eSPI.h>
 #include <lvgl.h>
 #include <WiFi.h>
+#include <esp32/esp32_audio.h>
+
+extern TFT_eSPI tft;
+
 #include <udp_functions.h>
 #include <Preferences.h>
 
@@ -425,7 +429,7 @@ void btn_event_handler_switch(lv_event_t * e)
         // MUTE
         if (lv_event_get_target(e) == mute_sw)
         {
-            meshcom_settings.node_mute = lv_obj_has_state(mute_sw, LV_STATE_CHECKED);
+            audio_set_mute(lv_obj_has_state(mute_sw, LV_STATE_CHECKED));
             save_settings();
 
             return;
@@ -598,6 +602,16 @@ void btn_event_handler_setup(lv_event_t * e)
         sscanf(cNew, "%i", &meshcom_settings.node_gcb[5]);
         if(meshcom_settings.node_gcb[5] < 0 || meshcom_settings.node_gcb[5] > 99999)
             meshcom_settings.node_gcb[5]=0;
+
+        // TX POWER
+        strVar = lv_textarea_get_text(setup_txpower);
+        sprintf(cNew, "%s", strVar.c_str());
+        int iNewPower;
+        sscanf(cNew, "%i", &iNewPower);
+        if(iNewPower != meshcom_settings.node_power)
+        {
+             meshcom_settings.node_power = iNewPower;
+        }
 
         save_settings();
 

@@ -39,6 +39,11 @@ void init_audio()
     
     audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
     audio.setVolume(12); // Set a default volume
+
+    if (meshcom_settings.node_mute) {
+        if (bDEBUG) Serial.println("[audio]...initially muted, disabling hardware");
+        i2s_driver_uninstall(i2s_num);
+    }
 }
 
 /**
@@ -144,6 +149,9 @@ bool play_file_from_sd_blocking(const char *filename, int volume)
 
         while (audio.isRunning())
         {
+            if (meshcom_settings.node_mute) {
+                break;
+            }
             audio.loop();
         }
         audio.stopSong();
@@ -169,6 +177,8 @@ bool play_file_from_sd_blocking(const char *filename)
  * create tone and play via I2S
  */
 void playTone(int duration_ms, int volume_percent) {
+    if (meshcom_settings.node_mute) return;
+
     int samples_per_period = SAMPLE_RATE / TONE_FREQ;
     int half_period = samples_per_period / 2;
 
@@ -438,6 +448,9 @@ void play_cw_start()
 void play_function(void *parameter)
 {
     while (audio.isRunning()) {
+        if (meshcom_settings.node_mute) {
+            break;
+        }
         audio.loop();
         // Reduce delay to minimum to keep audio buffer full
         // vTaskDelay(10) is too long and causes buffer underruns/stuttering
@@ -449,4 +462,48 @@ void play_function(void *parameter)
 
     vTaskDelete(NULL); // Use vTaskDelete instead of vTaskSuspend to properly clean up
 }
+
+/**
+ * Set mute state and enable/disable audio hardware to save power
+ */
+void audio_set_mute(bool mute) {
+    meshcom_settings.node_mute = mute;
+    
+    if (mute) {
+        if (bDEBUG) Serial.println("[audio]...muting and disabling hardware");
+        // Stop any playing audio
+        if (audio.isRunning()) {
+            audio.stopSong();
+        }
+        // Uninstall I2S driver to save power
+        i2s_driver_uninstall(i2s_num);
+    } else {
+        if (bDEBUG) Serial.println("[audio]...unmuting and enabling hardware");
+        // Re-install I2S driver with default settings (same as Audio lib default)
+        i2s_config_t i2s_config = {
+            .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
+            .sample_rate = 16000,
+            .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+            .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
+            #if ESP_ARDUINO_VERSION_MAJOR >= 2
+                .communication_format = (i2s_comm_format_t)(I2S_COMM_FORMAT_STAND_I2S),
+            #else
+                .communication_format = (i2s_comm_format_t)(I2S_COMM_FORMAT_I2S | I2S_COMM_FORMAT_I2S_MSB),
+            #endif
+            .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
+            .dma_buf_count = 8,
+            .dma_buf_len = 1024,
+            .use_apll = false,
+            .tx_desc_auto_clear = true,
+            .fixed_mclk = I2S_PIN_NO_CHANGE
+        };
+
+        i2s_driver_install(i2s_num, &i2s_config, 0, NULL);
+        
+        // Re-apply pinout to Audio lib
+        audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
+        audio.setVolume(12); 
+    }
+}
+
 #endif

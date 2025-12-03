@@ -71,6 +71,9 @@ static const uint32_t TRACKBALL_CURSOR_SHOW_TIME_MS = 750;
  */
 void initTDeck()
 {
+    // Reduce CPU frequency to 160MHz to save power (120MHz is not supported by ESP32 Arduino Core)
+    setCpuFrequencyMhz(160);
+
     Serial.println("[INIT]...initTDeck");
 
     //! The board peripheral power control pin needs to be set to HIGH when using the peripheral
@@ -582,7 +585,11 @@ static void keypad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
 
             if ((act_key == 0x2e) && (!meshcom_settings.node_keyboardlock)) // SYM + M
             {
+                #if defined(ENABLE_AUDIO)
+                audio_set_mute(!meshcom_settings.node_mute);
+                #else
                 meshcom_settings.node_mute = !meshcom_settings.node_mute;
+                #endif
             }
         }
 
@@ -706,7 +713,11 @@ static void touchpad_read( lv_indev_drv_t *indev_driver, lv_indev_data_t *data )
         uint8_t touched = touch.getPoint(x, y, 1);
         if (!meshcom_settings.node_keyboardlock)
         {
-            tft_on();
+            if(current_brightness_level == 0)
+                tft_on();
+            else
+                tdeck_tft_timer = millis();
+
             if (touched > 0)
             {
                 data->state = LV_INDEV_STATE_PR;

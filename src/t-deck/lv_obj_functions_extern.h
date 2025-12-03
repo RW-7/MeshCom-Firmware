@@ -42,6 +42,7 @@ extern lv_obj_t    *setup_grc3;
 extern lv_obj_t    *setup_grc4;
 extern lv_obj_t    *setup_grc5;
 extern lv_obj_t    *setup_utc;
+extern lv_obj_t    *setup_txpower;
 
 extern lv_obj_t    *btn_msg_id_label;
 extern lv_obj_t    *btn_ack_id_label;

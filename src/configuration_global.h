@@ -1,5 +1,5 @@
-#define SOURCE_VERSION "4.35"
-#define SOURCE_VERSION_SUB "h"
+#define SOURCE_VERSION "4.36"
+#define SOURCE_VERSION_SUB "h Beta"
 
 //Hardware Types
 #define TLORA_V2 1

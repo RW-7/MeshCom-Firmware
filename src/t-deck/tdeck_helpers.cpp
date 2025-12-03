@@ -2,9 +2,10 @@
  * @file        tdeck_helpers.cpp
  * @brief       T-DECK helper functions
  * @author      Ing. Jakob Gurnhofer (OE3GJC)
+ * @author      Ralph Weich (DD5RW)
  * @license     MIT
  * @copyright   Copyright (c) 2025 ICSSW.org
- * @date        2025-03-24
+ * @date        2025-12-03
  */
 
 #include "tdeck_helpers.h"

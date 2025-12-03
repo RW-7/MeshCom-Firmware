@@ -2,9 +2,10 @@
  * @file        esp32_audio.cpp
  * @brief       functions for handling audio playback on ESP32
  * @author      Ing. Jakob Gurnhofer (OE3GJC)
+ * @author      Ralph Weich (DD5RW)
  * @license     MIT
  * @copyright   Copyright (c) 2025 ICSSW.org
- * @date        2025-05-28
+ * @date        2025-12-03
  */
 
 #if defined(BOARD_T_DECK) || defined(BOARD_T_DECK_PLUS)

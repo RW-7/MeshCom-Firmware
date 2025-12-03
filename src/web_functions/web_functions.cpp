@@ -1,3 +1,7 @@
+/**
+ *  @author      Ralph Weich (DD5RW)
+ *  @date        2025-12-03
+ */
 #include <Arduino.h>
 
 #include <configuration.h>

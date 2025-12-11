@@ -140,6 +140,9 @@ struct MsgBubble
     String header;
     String timestamp;
     String body;
+    String gps;
+    bool sd;
+    bool wlan;
 };
 
 struct MsgTabEntry
@@ -2188,7 +2191,7 @@ static MsgTabEntry *msg_tabs_get_or_create_entry(const String &group, int *index
     return &msg_tab_entries.back();
 }
 
-static void log_message_to_sd(const String &group, const MsgBubble &bubble)
+static void log_message_to_sd(const String &group, const MsgBubble &bubble, const char* filename = "/messages.json")
 {
     String type = "incoming";
     if(bubble.type == MsgBubbleType::Outgoing) type = "outgoing";
@@ -2199,9 +2202,62 @@ static void log_message_to_sd(const String &group, const MsgBubble &bubble)
     line += "\"type\":\"" + type + "\",";
     line += "\"timestamp\":\"" + escape_json(bubble.timestamp) + "\",";
     line += "\"header\":\"" + escape_json(bubble.header) + "\",";
-    line += "\"body\":\"" + escape_json(bubble.body) + "\"}";
+    line += "\"body\":\"" + escape_json(bubble.body) + "\"";
 
-    log_json_to_sd("/messages.json", line);
+    line += "}";
+
+    log_json_to_sd(filename, line);
+}
+
+static lv_timer_t *sys_msg_save_timer = NULL;
+static String sys_msg_save_group;
+
+static void sys_msg_save_timer_cb(lv_timer_t *timer)
+{
+    // Find entry for sys_msg_save_group
+    int index = -1;
+    MsgTabEntry *entry = msg_tabs_find_entry(sys_msg_save_group, &index);
+    if(entry && !entry->bubbles.empty())
+    {
+        MsgBubble &last = entry->bubbles.back();
+        if(last.type == MsgBubbleType::System)
+        {
+             // Try to update timestamp if it looks invalid (00.00.00...)
+             if(last.timestamp.startsWith("00.00.00"))
+             {
+                 String new_ts = build_timestamp_string();
+                 if(!new_ts.startsWith("00.00.00"))
+                 {
+                     last.timestamp = new_ts;
+                 }
+             }
+
+             if(bSDDected)
+             {
+                const char* sys_filename = "/system_messages.json";
+                // Check size limit (approx 10000 messages * 100 bytes = 1MB)
+                if(SD.exists(sys_filename))
+                {
+                    File f = SD.open(sys_filename, FILE_READ);
+                    if(f)
+                    {
+                        if(f.size() > 1000000) // 1MB limit
+                        {
+                            f.close();
+                            SD.remove("/system_messages.json.bak");
+                            SD.rename(sys_filename, "/system_messages.json.bak");
+                        }
+                        else
+                        {
+                            f.close();
+                        }
+                    }
+                }
+                log_message_to_sd(sys_msg_save_group, last, sys_filename);
+             }
+        }
+    }
+    sys_msg_save_timer = NULL; 
 }
 
 static void msg_tabs_add_message(const String &group, const MsgBubble &bubble)
@@ -2225,6 +2281,21 @@ static void msg_tabs_add_message(const String &group, const MsgBubble &bubble)
         {
             // Merge bodies
             last.body += "\n" + bubble.body;
+            // Update status to latest
+            last.gps = bubble.gps;
+            last.sd = bubble.sd;
+            last.wlan = bubble.wlan;
+            // Update timestamp to latest (in case time synced in between)
+            last.timestamp = bubble.timestamp;
+
+            // Debounce save to SD
+            sys_msg_save_group = normalized;
+            if(sys_msg_save_timer) {
+                lv_timer_reset(sys_msg_save_timer);
+            } else {
+                sys_msg_save_timer = lv_timer_create(sys_msg_save_timer_cb, 2000, NULL);
+                lv_timer_set_repeat_count(sys_msg_save_timer, 1);
+            }
             
             // Update UI if this tab is active and we are not loading from file
             if (!loading_messages_from_file && index == msg_active_tab_index)
@@ -2252,33 +2323,47 @@ static void msg_tabs_add_message(const String &group, const MsgBubble &bubble)
     entry->bubbles.push_back(bubble);
     msg_tabs_trim_history(entry->bubbles);
 
-    /* Persist non-system messages into messages.jsonl */
-    if(!loading_messages_from_file && bubble.type != MsgBubbleType::System)
+    /* Persist messages */
+    if(!loading_messages_from_file)
     {
-        // Log to SD card immediately (append)
-        log_message_to_sd(normalized, bubble);
+        if (bubble.type != MsgBubbleType::System)
+        {
+            // Log to SD card immediately (append)
+            log_message_to_sd(normalized, bubble);
 
-        persisted_msgs.push_back(std::make_pair(normalized, bubble));
-        if(persisted_msgs.size() > PERSISTED_MSG_LIMIT)
-        {
-            size_t overflow = persisted_msgs.size() - PERSISTED_MSG_LIMIT;
-            persisted_msgs.erase(persisted_msgs.begin(), persisted_msgs.begin() + overflow);
-        }
+            persisted_msgs.push_back(std::make_pair(normalized, bubble));
+            if(persisted_msgs.size() > PERSISTED_MSG_LIMIT)
+            {
+                size_t overflow = persisted_msgs.size() - PERSISTED_MSG_LIMIT;
+                persisted_msgs.erase(persisted_msgs.begin(), persisted_msgs.begin() + overflow);
+            }
 
-        // If configured to immediate save, write to flash now. Otherwise
-        // buffer in RAM and flush periodically to reduce flash wear.
-        if(meshcom_settings.node_immediate_save)
-        {
-            save_persisted_messages();
-            unsaved_msgs_count = 0;
-        }
-        else
-        {
-            unsaved_msgs_count++;
-            if(unsaved_msgs_count >= FLUSH_THRESHOLD)
+            // If configured to immediate save, write to flash now. Otherwise
+            // buffer in RAM and flush periodically to reduce flash wear.
+            if(meshcom_settings.node_immediate_save)
             {
                 save_persisted_messages();
                 unsaved_msgs_count = 0;
+            }
+            else
+            {
+                unsaved_msgs_count++;
+                if(unsaved_msgs_count >= FLUSH_THRESHOLD)
+                {
+                    save_persisted_messages();
+                    unsaved_msgs_count = 0;
+                }
+            }
+        }
+        else
+        {
+            // System messages: Debounce save to SD
+            sys_msg_save_group = normalized;
+            if(sys_msg_save_timer) {
+                lv_timer_reset(sys_msg_save_timer);
+            } else {
+                sys_msg_save_timer = lv_timer_create(sys_msg_save_timer_cb, 2000, NULL);
+                lv_timer_set_repeat_count(sys_msg_save_timer, 1);
             }
         }
     }
@@ -3345,6 +3430,15 @@ void tdeck_add_system_message(const char *text)
     bubble.header = "System";
     bubble.timestamp = build_timestamp_string();
     bubble.body = String(text);
+
+    bubble.gps = "off";
+    if(bGPSON)
+    {
+        if(posinfo_fix) bubble.gps = "fix";
+        else bubble.gps = "on";
+    }
+    bubble.sd = bSDDected;
+    bubble.wlan = bWIFIAP;
 
     String group = "SYSTEM";
     if(msg_active_tab_index >= 0 && msg_active_tab_index < (int)msg_tab_entries.size())

@@ -14,6 +14,7 @@
 #include "tdeck_extern.h"
 #include "tdeck_helpers.h"
 #include <esp32/esp32_flash.h>
+#include <mheard_functions.h>
 
 #include <Arduino.h>
 #include <SPI.h>
@@ -151,6 +152,12 @@ void initTDeck()
     Serial.print("[INIT]...SDCard: ");
     Serial.println(bSDDected == true ? "OK" : "ERROR");
 
+    if(bSDDected)
+    {
+        loadMHeardPersistence();
+        loadPathPersistence();
+    }
+
     Serial.print("[INIT]...Keyboard: ");
     Serial.println(kbDected == true ? "OK" : "ERROR");
     
@@ -228,7 +235,7 @@ bool setupSD()
 void addMessage(const char *str)
 {
     tdeck_add_system_message(str);
-    uint32_t run = millis() + 500;
+    uint32_t run = millis() + 2000;
     while (millis() < run)
     {
         lv_task_handler();

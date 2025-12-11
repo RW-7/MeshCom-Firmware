@@ -18,6 +18,11 @@ void showMHeardTDECK();
 void showPathTDECK();
 #endif
 
+void saveMHeardPersistence();
+void loadMHeardPersistence();
+void savePathPersistence();
+void loadPathPersistence();
+
 String getHardwareLong(uint8_t hwid);
 char* getPayloadType(char ptype);
 

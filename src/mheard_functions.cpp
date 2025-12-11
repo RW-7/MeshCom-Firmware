@@ -752,3 +752,17 @@ void loadPathPersistence() {
     showPathTDECK();
     #endif
 }
+
+unsigned long getLatestMHeardTimestamp()
+{
+    unsigned long max_ts = 0;
+    for(int i=0; i<MAX_MHEARD; i++)
+    {
+        if(mheardEpoch[i] > max_ts) max_ts = mheardEpoch[i];
+    }
+    for(int i=0; i<MAX_MHPATH; i++)
+    {
+        if(mheardPathEpoch[i] > max_ts) max_ts = mheardPathEpoch[i];
+    }
+    return max_ts;
+}

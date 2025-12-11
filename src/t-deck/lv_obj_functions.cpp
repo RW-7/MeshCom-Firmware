@@ -3685,3 +3685,27 @@ void tdeck_hide_tab_menu(void)
 {
     tdeck_set_tab_menu_visible(false);
 }
+
+static unsigned long parseTimestamp(String ts) {
+    // Format: YYYY.MM.DD HH:MM:SS
+    if (ts.length() != 19) return 0;
+    struct tm tm;
+    tm.tm_year = ts.substring(0, 4).toInt() - 1900;
+    tm.tm_mon = ts.substring(5, 7).toInt() - 1;
+    tm.tm_mday = ts.substring(8, 10).toInt();
+    tm.tm_hour = ts.substring(11, 13).toInt();
+    tm.tm_min = ts.substring(14, 16).toInt();
+    tm.tm_sec = ts.substring(17, 19).toInt();
+    return mktime(&tm);
+}
+
+unsigned long getLatestMessageTimestamp()
+{
+    unsigned long max_ts = 0;
+    for(const auto &pair : persisted_msgs)
+    {
+        unsigned long ts = parseTimestamp(pair.second.timestamp);
+        if(ts > max_ts) max_ts = ts;
+    }
+    return max_ts;
+}

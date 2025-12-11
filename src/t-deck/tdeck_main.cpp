@@ -15,6 +15,7 @@
 #include "tdeck_helpers.h"
 #include <esp32/esp32_flash.h>
 #include <mheard_functions.h>
+#include <time_functions.h>
 
 #include <Arduino.h>
 #include <SPI.h>
@@ -156,6 +157,7 @@ void initTDeck()
     {
         loadMHeardPersistence();
         loadPathPersistence();
+        loadTimePersistence();
     }
 
     Serial.print("[INIT]...Keyboard: ");

@@ -3376,7 +3376,7 @@ static void msg_focus_and_alert(bool bWithAudio)
     if(bWithAudio)
     {
         Serial.println("msg_focus_and_alert: Playing audio...");
-        if (!play_file_from_sd_blocking(meshcom_settings.node_audio_msg.c_str(), 12))
+        if (!play_file_from_sd(meshcom_settings.node_audio_msg.c_str(), 12))
         {
             play_cw_start();
         }

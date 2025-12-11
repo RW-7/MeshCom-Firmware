@@ -192,7 +192,7 @@ void initTDeck()
 
 void startAudio()
 {
-    if (!play_file_from_sd_blocking(meshcom_settings.node_audio_start.c_str(), 12))
+    if (!play_file_from_sd(meshcom_settings.node_audio_start.c_str(), 12))
     {
         play_cw_start();
     }

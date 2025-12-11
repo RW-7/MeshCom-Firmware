@@ -1087,7 +1087,8 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_obj_set_pos(position_ta, 0, 0);
     lv_obj_set_style_radius(position_ta, 10, 0);
     lv_obj_set_style_clip_corner(position_ta, true, 0);
-    lv_obj_set_size(position_ta, 302, lv_pct(100));
+    lv_obj_set_width(position_ta, 302);
+    lv_obj_set_height(position_ta, LV_SIZE_CONTENT); // Allow height to grow with content
 
     lv_table_set_row_cnt(position_ta, 1);
     lv_table_set_col_cnt(position_ta, 3);
@@ -1155,7 +1156,8 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_obj_add_style(mheard_ta, &cell_style, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_add_style(mheard_ta, &cell_style1, LV_PART_ITEMS|LV_STATE_DEFAULT);
     lv_obj_set_pos(mheard_ta, 0, 0);
-    lv_obj_set_size(mheard_ta, 302, lv_pct(100));
+    lv_obj_set_width(mheard_ta, 302);
+    lv_obj_set_height(mheard_ta, LV_SIZE_CONTENT); // Allow height to grow with content
     lv_obj_set_style_radius(mheard_ta, 10, 0);
     lv_obj_set_style_clip_corner(mheard_ta, true, 0);
 
@@ -1179,7 +1181,8 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_obj_add_style(path_ta, &cell_style, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_add_style(path_ta, &cell_style1, LV_PART_ITEMS|LV_STATE_DEFAULT);
     lv_obj_set_pos(path_ta, 0, 0);
-    lv_obj_set_size(path_ta, 302, lv_pct(100));
+    lv_obj_set_width(path_ta, 302);
+    lv_obj_set_height(path_ta, LV_SIZE_CONTENT); // Allow height to grow with content
     lv_obj_set_style_radius(path_ta, 10, 0);
     lv_obj_set_style_clip_corner(path_ta, true, 0);
 

@@ -23,6 +23,8 @@
 #include <cstring>
 #include <cctype>
 #include <vector>
+#include <SD.h>
+#include <SPI.h>
 
 #include "event_functions.h"
 #include <lora_setchip.h>
@@ -138,6 +140,9 @@ struct MsgBubble
     String header;
     String timestamp;
     String body;
+    String gps;
+    bool sd;
+    bool wlan;
 };
 
 struct MsgTabEntry
@@ -157,7 +162,7 @@ static const size_t MSG_TAB_MAX_MESSAGES = 50;
 static std::vector<std::pair<String, MsgBubble>> persisted_msgs;
 static bool loading_messages_from_file = false;
 static const size_t PERSISTED_MSG_LIMIT = 1000;
-static const char *PERSISTED_MSG_FILE = "/messages.jsonl";
+static const char *PERSISTED_MSG_FILE = "/messages.json";
 static int unsaved_msgs_count = 0;
 static const int FLUSH_THRESHOLD = 10;
 static unsigned long last_flush_millis = 0;
@@ -170,7 +175,6 @@ static void msg_flush_timer_cb(lv_timer_t *t);
 static lv_timer_t *msg_flush_timer = NULL;
 static lv_timer_t *track_clear_timer = NULL;
 
-static String escape_json(const String &s);
 static String unescape_json(const String &s);
 static void save_persisted_messages(void);
 static void load_persisted_messages(void);
@@ -1086,7 +1090,8 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_obj_set_pos(position_ta, 0, 0);
     lv_obj_set_style_radius(position_ta, 10, 0);
     lv_obj_set_style_clip_corner(position_ta, true, 0);
-    lv_obj_set_size(position_ta, 302, LV_VER_RES * 0.6);
+    lv_obj_set_width(position_ta, 302);
+    lv_obj_set_height(position_ta, LV_SIZE_CONTENT); // Allow height to grow with content
 
     lv_table_set_row_cnt(position_ta, 1);
     lv_table_set_col_cnt(position_ta, 3);
@@ -1097,25 +1102,7 @@ void setDisplayLayout(lv_obj_t *parent)
 
     lv_obj_add_event_cb(position_ta, position_ta_draw_event, LV_EVENT_DRAW_PART_BEGIN, NULL);
 
-    lv_obj_set_height(position_ta, LV_VER_RES * 0.6);
-
-    // TIME
-    lv_obj_t * btn_time1 = lv_btn_create(t3);    /*Add a button the current screen*/
-    lv_obj_set_pos(btn_time1, 0, 145);           /*Set its position*/
-    lv_obj_set_size(btn_time1, 145, 20);         /*Set its size*/
-
-    btn_time_label1 = lv_label_create(btn_time1); /*Add a label to the button*/
-    lv_label_set_text(btn_time_label1, "time");  /*Set the labels text*/
-    lv_obj_center(btn_time_label1);
-
-    // BATT
-    lv_obj_t * btn_batt1 = lv_btn_create(t3);    /*Add a button the current screen*/
-    lv_obj_set_pos(btn_batt1, 146, 145);           /*Set its position*/
-    lv_obj_set_size(btn_batt1, 145, 20);         /*Set its size*/
-
-    btn_batt_label1 = lv_label_create(btn_batt1); /*Add a label to the button*/
-    lv_label_set_text(btn_batt_label1, "Batt --");  /*Set the labels text*/
-    lv_obj_center(btn_batt_label1);
+    // lv_obj_set_height(position_ta, LV_VER_RES * 0.6);
 
     ////////////////////////////////////////////////////////////////////////////
     // MAP
@@ -1172,7 +1159,8 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_obj_add_style(mheard_ta, &cell_style, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_add_style(mheard_ta, &cell_style1, LV_PART_ITEMS|LV_STATE_DEFAULT);
     lv_obj_set_pos(mheard_ta, 0, 0);
-    lv_obj_set_size(mheard_ta, 302, LV_VER_RES * 0.6);
+    lv_obj_set_width(mheard_ta, 302);
+    lv_obj_set_height(mheard_ta, LV_SIZE_CONTENT); // Allow height to grow with content
     lv_obj_set_style_radius(mheard_ta, 10, 0);
     lv_obj_set_style_clip_corner(mheard_ta, true, 0);
 
@@ -1186,27 +1174,16 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_table_set_col_width(mheard_ta, 4, 38);
     lv_table_set_col_width(mheard_ta, 5, 38);
 
-    lv_obj_set_height(mheard_ta, LV_VER_RES * 0.6);
+    lv_table_set_cell_value(mheard_ta, 0, 0, "Call");
+    lv_table_set_cell_value(mheard_ta, 0, 1, "Time");
+    lv_table_set_cell_value(mheard_ta, 0, 2, "Typ");
+    lv_table_set_cell_value(mheard_ta, 0, 3, "HW");
+    lv_table_set_cell_value(mheard_ta, 0, 4, "Mod");
+    lv_table_set_cell_value(mheard_ta, 0, 5, "Dist");
+
+    // lv_obj_set_height(mheard_ta, LV_VER_RES * 0.6);
 
     lv_obj_add_event_cb(mheard_ta, mheard_ta_draw_event, LV_EVENT_DRAW_PART_BEGIN, NULL);
-
-    // TIME
-    lv_obj_t * btn_time2 = lv_btn_create(t4);    /*Add a button the current screen*/
-    lv_obj_set_pos(btn_time2, 0, 145);           /*Set its position*/
-    lv_obj_set_size(btn_time2, 145, 20);         /*Set its size*/
-
-    btn_time_label2 = lv_label_create(btn_time2); /*Add a label to the button*/
-    lv_label_set_text(btn_time_label2, "time");  /*Set the labels text*/
-    lv_obj_center(btn_time_label2);
-
-    // BATT
-    lv_obj_t * btn_batt2 = lv_btn_create(t4);    /*Add a button the current screen*/
-    lv_obj_set_pos(btn_batt2, 146, 145);           /*Set its position*/
-    lv_obj_set_size(btn_batt2, 145, 20);         /*Set its size*/
-
-    btn_batt_label2 = lv_label_create(btn_batt2); /*Add a label to the button*/
-    lv_label_set_text(btn_batt_label2, "Batt --");  /*Set the labels text*/
-    lv_obj_center(btn_batt_label2);
 
     ////////////////////////////////////////////////////////////////////////////
     // TEXT PATH
@@ -1214,7 +1191,8 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_obj_add_style(path_ta, &cell_style, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_add_style(path_ta, &cell_style1, LV_PART_ITEMS|LV_STATE_DEFAULT);
     lv_obj_set_pos(path_ta, 0, 0);
-    lv_obj_set_size(path_ta, 302, LV_VER_RES * 0.6);
+    lv_obj_set_width(path_ta, 302);
+    lv_obj_set_height(path_ta, LV_SIZE_CONTENT); // Allow height to grow with content
     lv_obj_set_style_radius(path_ta, 10, 0);
     lv_obj_set_style_clip_corner(path_ta, true, 0);
 
@@ -1225,27 +1203,13 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_table_set_col_width(path_ta, 1, 40);
     lv_table_set_col_width(path_ta, 2, 182);
 
-    lv_obj_set_height(path_ta, LV_VER_RES * 0.6);
+    lv_table_set_cell_value(path_ta, 0, 0, "Call");
+    lv_table_set_cell_value(path_ta, 0, 1, "Time");
+    lv_table_set_cell_value(path_ta, 0, 2, "Path");
+
+    // lv_obj_set_height(path_ta, LV_VER_RES * 0.6);
 
     lv_obj_add_event_cb(path_ta, path_ta_draw_event, LV_EVENT_DRAW_PART_BEGIN, NULL);
-
-    // TIME
-    lv_obj_t * btn_time8 = lv_btn_create(t8);    /*Add a button the current screen*/
-    lv_obj_set_pos(btn_time8, 0, 145);           /*Set its position*/
-    lv_obj_set_size(btn_time8, 145, 20);         /*Set its size*/
-
-    btn_time_label4 = lv_label_create(btn_time8); /*Add a label to the button*/
-    lv_label_set_text(btn_time_label4, "time");  /*Set the labels text*/
-    lv_obj_center(btn_time_label4);
-
-    // BATT
-    lv_obj_t * btn_batt4 = lv_btn_create(t8);    /*Add a button the current screen*/
-    lv_obj_set_pos(btn_batt4, 146, 145);           /*Set its position*/
-    lv_obj_set_size(btn_batt4, 145, 20);         /*Set its size*/
-
-    btn_batt_label4 = lv_label_create(btn_batt4); /*Add a label to the button*/
-    lv_label_set_text(btn_batt_label4, "Batt --");  /*Set the labels text*/
-    lv_obj_center(btn_batt_label4);
 
     ////////////////////////////////////////////////////////////////////////////
     // TEXT INPUT
@@ -2227,6 +2191,75 @@ static MsgTabEntry *msg_tabs_get_or_create_entry(const String &group, int *index
     return &msg_tab_entries.back();
 }
 
+static void log_message_to_sd(const String &group, const MsgBubble &bubble, const char* filename = "/messages.json")
+{
+    String type = "incoming";
+    if(bubble.type == MsgBubbleType::Outgoing) type = "outgoing";
+    else if(bubble.type == MsgBubbleType::System) type = "system";
+
+    String line = "{";
+    line += "\"group\":\"" + escape_json(group) + "\",";
+    line += "\"type\":\"" + type + "\",";
+    line += "\"timestamp\":\"" + escape_json(bubble.timestamp) + "\",";
+    line += "\"header\":\"" + escape_json(bubble.header) + "\",";
+    line += "\"body\":\"" + escape_json(bubble.body) + "\"";
+
+    line += "}";
+
+    log_json_to_sd(filename, line);
+}
+
+static lv_timer_t *sys_msg_save_timer = NULL;
+static String sys_msg_save_group;
+
+static void sys_msg_save_timer_cb(lv_timer_t *timer)
+{
+    // Find entry for sys_msg_save_group
+    int index = -1;
+    MsgTabEntry *entry = msg_tabs_find_entry(sys_msg_save_group, &index);
+    if(entry && !entry->bubbles.empty())
+    {
+        MsgBubble &last = entry->bubbles.back();
+        if(last.type == MsgBubbleType::System)
+        {
+             // Try to update timestamp if it looks invalid (00.00.00...)
+             if(last.timestamp.startsWith("00.00.00"))
+             {
+                 String new_ts = build_timestamp_string();
+                 if(!new_ts.startsWith("00.00.00"))
+                 {
+                     last.timestamp = new_ts;
+                 }
+             }
+
+             if(bSDDected)
+             {
+                const char* sys_filename = "/system_messages.json";
+                // Check size limit (approx 10000 messages * 100 bytes = 1MB)
+                if(SD.exists(sys_filename))
+                {
+                    File f = SD.open(sys_filename, FILE_READ);
+                    if(f)
+                    {
+                        if(f.size() > 1000000) // 1MB limit
+                        {
+                            f.close();
+                            SD.remove("/system_messages.json.bak");
+                            SD.rename(sys_filename, "/system_messages.json.bak");
+                        }
+                        else
+                        {
+                            f.close();
+                        }
+                    }
+                }
+                log_message_to_sd(sys_msg_save_group, last, sys_filename);
+             }
+        }
+    }
+    sys_msg_save_timer = NULL; 
+}
+
 static void msg_tabs_add_message(const String &group, const MsgBubble &bubble)
 {
     String normalized = group;
@@ -2240,33 +2273,97 @@ static void msg_tabs_add_message(const String &group, const MsgBubble &bubble)
     if(entry == NULL)
         return;
 
+    // Check if we can merge with the last bubble (System messages only)
+    if (bubble.type == MsgBubbleType::System && !entry->bubbles.empty())
+    {
+        MsgBubble &last = entry->bubbles.back();
+        if (last.type == MsgBubbleType::System)
+        {
+            // Merge bodies
+            last.body += "\n" + bubble.body;
+            // Update status to latest
+            last.gps = bubble.gps;
+            last.sd = bubble.sd;
+            last.wlan = bubble.wlan;
+            // Update timestamp to latest (in case time synced in between)
+            last.timestamp = bubble.timestamp;
+
+            // Debounce save to SD
+            sys_msg_save_group = normalized;
+            if(sys_msg_save_timer) {
+                lv_timer_reset(sys_msg_save_timer);
+            } else {
+                sys_msg_save_timer = lv_timer_create(sys_msg_save_timer_cb, 2000, NULL);
+                lv_timer_set_repeat_count(sys_msg_save_timer, 1);
+            }
+            
+            // Update UI if this tab is active and we are not loading from file
+            if (!loading_messages_from_file && index == msg_active_tab_index)
+            {
+                lv_obj_t *last_wrapper = lv_obj_get_child(msg_list, -1);
+                if(last_wrapper)
+                {
+                    lv_obj_t *bubble_obj = lv_obj_get_child(last_wrapper, 0);
+                    if(bubble_obj)
+                    {
+                        // Body label is at index 1 (0 is header_row)
+                        lv_obj_t *body_label = lv_obj_get_child(bubble_obj, 1);
+                        if(body_label)
+                        {
+                            lv_label_set_text(body_label, last.body.c_str());
+                            lv_obj_scroll_to_view(last_wrapper, LV_ANIM_ON);
+                        }
+                    }
+                }
+            }
+            return; // Done, merged
+        }
+    }
+
     entry->bubbles.push_back(bubble);
     msg_tabs_trim_history(entry->bubbles);
 
-    /* Persist non-system messages into messages.jsonl */
-    if(!loading_messages_from_file && bubble.type != MsgBubbleType::System)
+    /* Persist messages */
+    if(!loading_messages_from_file)
     {
-        persisted_msgs.push_back(std::make_pair(normalized, bubble));
-        if(persisted_msgs.size() > PERSISTED_MSG_LIMIT)
+        if (bubble.type != MsgBubbleType::System)
         {
-            size_t overflow = persisted_msgs.size() - PERSISTED_MSG_LIMIT;
-            persisted_msgs.erase(persisted_msgs.begin(), persisted_msgs.begin() + overflow);
-        }
+            // Log to SD card immediately (append)
+            log_message_to_sd(normalized, bubble);
 
-        // If configured to immediate save, write to flash now. Otherwise
-        // buffer in RAM and flush periodically to reduce flash wear.
-        if(meshcom_settings.node_immediate_save)
-        {
-            save_persisted_messages();
-            unsaved_msgs_count = 0;
-        }
-        else
-        {
-            unsaved_msgs_count++;
-            if(unsaved_msgs_count >= FLUSH_THRESHOLD)
+            persisted_msgs.push_back(std::make_pair(normalized, bubble));
+            if(persisted_msgs.size() > PERSISTED_MSG_LIMIT)
+            {
+                size_t overflow = persisted_msgs.size() - PERSISTED_MSG_LIMIT;
+                persisted_msgs.erase(persisted_msgs.begin(), persisted_msgs.begin() + overflow);
+            }
+
+            // If configured to immediate save, write to flash now. Otherwise
+            // buffer in RAM and flush periodically to reduce flash wear.
+            if(meshcom_settings.node_immediate_save)
             {
                 save_persisted_messages();
                 unsaved_msgs_count = 0;
+            }
+            else
+            {
+                unsaved_msgs_count++;
+                if(unsaved_msgs_count >= FLUSH_THRESHOLD)
+                {
+                    save_persisted_messages();
+                    unsaved_msgs_count = 0;
+                }
+            }
+        }
+        else
+        {
+            // System messages: Debounce save to SD
+            sys_msg_save_group = normalized;
+            if(sys_msg_save_timer) {
+                lv_timer_reset(sys_msg_save_timer);
+            } else {
+                sys_msg_save_timer = lv_timer_create(sys_msg_save_timer_cb, 2000, NULL);
+                lv_timer_set_repeat_count(sys_msg_save_timer, 1);
             }
         }
     }
@@ -2275,9 +2372,20 @@ static void msg_tabs_add_message(const String &group, const MsgBubble &bubble)
     // or if we don't have any active tab yet.
     // This prevents System logs from pulling focus away from user conversations.
     // Also do NOT switch tabs if we are currently loading messages from file.
-    if (!loading_messages_from_file && (bubble.type != MsgBubbleType::System || msg_active_tab_index < 0))
+    if (!loading_messages_from_file)
     {
-        msg_tabs_select_index(index);
+        if (index == msg_active_tab_index)
+        {
+            // Already active, just append to view
+            msg_list_append_bubble(bubble);
+            lv_obj_t *last = lv_obj_get_child(msg_list, -1);
+            if(last != NULL)
+                lv_obj_scroll_to_view(last, LV_ANIM_ON);
+        }
+        else if (bubble.type != MsgBubbleType::System || msg_active_tab_index < 0)
+        {
+            msg_tabs_select_index(index);
+        }
     }
 }
 
@@ -2662,23 +2770,6 @@ static void msg_tabs_clear_all(void)
 
 // -- Persistence implementation -------------------------------------------------
 
-static String escape_json(const String &s)
-{
-    String out;
-    out.reserve(s.length() * 2 + 8);
-    for(size_t i = 0; i < s.length(); ++i)
-    {
-        char c = s[i];
-        if(c == '"') out += "\\\"";
-        else if(c == '\\') out += "\\\\";
-        else if(c == '\n') out += "\\n";
-        else if(c == '\r') out += "\\r";
-        else if(c == '\t') out += "\\t";
-        else out += c;
-    }
-    return out;
-}
-
 static String unescape_json(const String &s)
 {
     String out;
@@ -2726,19 +2817,34 @@ static void save_persisted_messages(void)
             Serial.println("[MSG] SPIFFS begin failed (save) — partition not found");
         }
     }
+    
     if(!spiffs_available)
         return;
 
-    const char *tmp = "/messages.jsonl.tmp";
-    File f = SPIFFS.open(tmp, FILE_WRITE);
-    if(!f)
+    const char *tmp = "/messages.json.tmp";
+    File f;
+    if(spiffs_available)
     {
-        Serial.println("[MSG] Failed to open temp messages file for writing");
-        return;
+        f = SPIFFS.open(tmp, FILE_WRITE);
+        if(!f)
+        {
+            Serial.println("[MSG] Failed to open temp messages file for writing");
+        }
+        else
+        {
+            f.println("[");
+        }
     }
+
+    if(!f)
+        return;
+
+    size_t count = 0;
+    size_t total = persisted_msgs.size();
 
     for(const auto &p : persisted_msgs)
     {
+        count++;
         const String &group = p.first;
         const MsgBubble &b = p.second;
         String type = "incoming";
@@ -2752,16 +2858,23 @@ static void save_persisted_messages(void)
         line += "\"header\":\"" + escape_json(b.header) + "\",";
         line += "\"body\":\"" + escape_json(b.body) + "\"}";
 
-        f.println(line);
+        if(count < total)
+            line += ",";
+
+        if(f) f.println(line);
     }
 
-    f.flush();
-    f.close();
+    if(f)
+    {
+        f.println("]");
+        f.flush();
+        f.close();
 
-    // rename tmp -> final
-    if(SPIFFS.exists(PERSISTED_MSG_FILE))
-        SPIFFS.remove(PERSISTED_MSG_FILE);
-    SPIFFS.rename(tmp, PERSISTED_MSG_FILE);
+        // rename tmp -> final
+        if(SPIFFS.exists(PERSISTED_MSG_FILE))
+            SPIFFS.remove(PERSISTED_MSG_FILE);
+        SPIFFS.rename(tmp, PERSISTED_MSG_FILE);
+    }
 
     // SPIFFS.end(); // Do not unmount
     // update flush timestamp and reset unsaved counter
@@ -2817,6 +2930,8 @@ static void load_persisted_messages(void)
         String line = f.readStringUntil('\n');
         line.trim();
         if(line.length() == 0) continue;
+        if(line == "[" || line == "]") continue;
+        if(line.endsWith(",")) line.remove(line.length()-1);
 
         // naive parse because we wrote a controlled JSON format
         auto extract = [&](const char *key)->String{
@@ -3124,6 +3239,16 @@ void tdeck_add_to_pos_view(String callsign, double u_dlat, char lat_c, double u_
 
     snprintf(buf, 24, "%.2lf%c/%.2lf%c/%i", dlat, lat_c, dlon, lon_c, alt);
     lv_table_set_cell_value(position_ta, 1, 2, buf);
+
+    // Log position to SD
+    String json = "{";
+    json += "\"call\":\"" + escape_json(callsign) + "\",";
+    json += "\"time\":\"" + escape_json(String(meshcom_settings.node_date_hour) + ":" + String(meshcom_settings.node_date_minute)) + "\",";
+    json += "\"lat\":" + String(dlat, 6) + ",";
+    json += "\"lon\":" + String(dlon, 6) + ",";
+    json += "\"alt\":" + String(alt);
+    json += "}";
+    log_json_to_sd("/positions.json", json);
 }
 
 /**
@@ -3251,7 +3376,7 @@ static void msg_focus_and_alert(bool bWithAudio)
     if(bWithAudio)
     {
         Serial.println("msg_focus_and_alert: Playing audio...");
-        if (!play_file_from_sd_blocking(meshcom_settings.node_audio_msg.c_str(), 12))
+        if (!play_file_from_sd(meshcom_settings.node_audio_msg.c_str(), 12))
         {
             play_cw_start();
         }
@@ -3306,7 +3431,22 @@ void tdeck_add_system_message(const char *text)
     bubble.timestamp = build_timestamp_string();
     bubble.body = String(text);
 
-    msg_tabs_add_message("SYSTEM", bubble);
+    bubble.gps = "off";
+    if(bGPSON)
+    {
+        if(posinfo_fix) bubble.gps = "fix";
+        else bubble.gps = "on";
+    }
+    bubble.sd = bSDDected;
+    bubble.wlan = bWIFIAP;
+
+    String group = "SYSTEM";
+    if(msg_active_tab_index >= 0 && msg_active_tab_index < (int)msg_tab_entries.size())
+    {
+        group = msg_tab_entries[msg_active_tab_index].group;
+    }
+
+    msg_tabs_add_message(group, bubble);
     msg_focus_and_alert(false);
 }
 
@@ -3544,4 +3684,28 @@ void tdeck_reset_msg_tabs(void)
 void tdeck_hide_tab_menu(void)
 {
     tdeck_set_tab_menu_visible(false);
+}
+
+static unsigned long parseTimestamp(String ts) {
+    // Format: YYYY.MM.DD HH:MM:SS
+    if (ts.length() != 19) return 0;
+    struct tm tm;
+    tm.tm_year = ts.substring(0, 4).toInt() - 1900;
+    tm.tm_mon = ts.substring(5, 7).toInt() - 1;
+    tm.tm_mday = ts.substring(8, 10).toInt();
+    tm.tm_hour = ts.substring(11, 13).toInt();
+    tm.tm_min = ts.substring(14, 16).toInt();
+    tm.tm_sec = ts.substring(17, 19).toInt();
+    return mktime(&tm);
+}
+
+unsigned long getLatestMessageTimestamp()
+{
+    unsigned long max_ts = 0;
+    for(const auto &pair : persisted_msgs)
+    {
+        unsigned long ts = parseTimestamp(pair.second.timestamp);
+        if(ts > max_ts) max_ts = ts;
+    }
+    return max_ts;
 }

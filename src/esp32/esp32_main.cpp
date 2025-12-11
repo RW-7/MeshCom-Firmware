@@ -50,6 +50,7 @@
 #include <extudp_functions.h>
 #include <web_functions/web_functions.h>
 #include <mheard_functions.h>
+#include <time_functions.h>
 #include <clock.h>
 #include <onewire_functions.h>
 #include <onebutton_functions.h>
@@ -576,6 +577,10 @@ void esp32setup()
     // Initialize T-Deck GUI
     #if defined(BOARD_T_DECK) || defined(BOARD_T_DECK_PLUS)
         initTDeck();
+        if(bGPSON)
+            addMessage("GPS enabled");
+        else
+            addMessage("GPS disabled");
     #endif
 
     // Initialize T-Deck GUI
@@ -1327,7 +1332,22 @@ void esp32setup()
         if(!startWIFI())
         {
             Serial.println("[WIFI]...no connection");
+            #if defined(BOARD_T_DECK) || defined(BOARD_T_DECK_PLUS)
+            addMessage("WiFi connection failed");
+            #endif
         }
+        else
+        {
+            #if defined(BOARD_T_DECK) || defined(BOARD_T_DECK_PLUS)
+            addMessage("WiFi connected");
+            #endif
+        }
+    }
+    else
+    {
+        #if defined(BOARD_T_DECK) || defined(BOARD_T_DECK_PLUS)
+        addMessage("WiFi deactivated");
+        #endif
     }
     //
     ///////////////////////////////////////////////////////
@@ -1355,6 +1375,13 @@ void esp32_write_ble(uint8_t confBuff[300], uint8_t conf_len)
 
 void esp32loop()
 {
+    static unsigned long last_time_save = 0;
+    if(millis() - last_time_save > 900000) // Save every 15 minutes
+    {
+        saveTimePersistence();
+        last_time_save = millis();
+    }
+
     // loop T-Deck GUI
     #if defined(BOARD_T_DECK_PRO)
         loopTDeck_pro();

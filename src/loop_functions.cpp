@@ -3391,83 +3391,44 @@ unsigned int setSMartBeaconing(double dlat, double dlon)
         posinfo_direction = tinyGPSPLus.courseTo(posinfo_prev_lat, posinfo_prev_lon, dlat, dlon);    // Grad
     }
 
-    // to little distance
-    if(distance < 55)
-    {
-        posinfo_last_rate = 1800;
-
-        if(bGPSDEBUG)
-            Serial.printf("%s [POSINFO]... LITTLE (%.0lf m) --> DISTANCE RATE:%i\n", getTimeString().c_str(), distance, (int)posinfo_last_rate);
-
-        return posinfo_last_rate;
-    }
-
-    // TEST
-    /*
-    distance = 6.5;
-    posinfo_direction = 90.0;
-    */
-
-    double distance_per_sec = distance / gps_refresh_intervall; // m/s
-
-    if(bGPSDEBUG)
-        Serial.printf("%s [POSINFO]... dir:%.1lf° dist:%.1lf speed:%.1lf intervall:%.1lf\n", getTimeString().c_str(), posinfo_direction, distance, distance_per_sec, gps_refresh_intervall);
-
-    // gps_refresh_intervall default 10
-    // get gps distance every 100 seconds
-    // gps_send_rate 30 minutes default
-    // bDisplayTrack = true Smartbeaconing used
-
-    // distanz in m pro gps_refresh_intervall (default 2) sekunden
-    // Bewegung                     m / rate
-    // zu fuss       1.1 m/s ca.   40
-    // fahrrad       4.0 m/s ca.  180
-    // auto stadt   14.0 m/s ca.  910
-    // auto land    22.0 m/s ca. 2090
-    // autobahn     36.0 m/s ca. 4500
-
-    if(distance_per_sec > 1.1)  // seit letzter position
-    {
-        // schnellere Positionsauslösung bei Bewegung (APRS & Mesh)
-        if(distance_per_sec < 4.0)          // Fuß > 1.1 m/s
-            gps_send_rate = 25;             // ~25 s
-        else
-        if(distance_per_sec < 14.0)         // Fahrrad < 50 km/h
-            gps_send_rate = 20;
-        else
-        if(distance_per_sec < 22.0)         // Auto Stadtverkehr
-            gps_send_rate = 18;
-        else
-        if(distance_per_sec < 36.0)         // Landstraße
-            gps_send_rate = 16;
-        else
-            gps_send_rate = 15;             // Autobahn / sehr schnell
-
-        if(bGPSDEBUG)
-            Serial.printf("%s [POSINFO]... dist/s:%.1lf -> fast rate:%i\n", getTimeString().c_str(), distance_per_sec, (int)gps_send_rate);
-    }
+    // Use GPS speed if available (more accurate than distance/interval)
+    double speed_mps = 0.0;
+    if(tinyGPSPLus.speed.isValid())
+        speed_mps = tinyGPSPLus.speed.mps();
     else
+        speed_mps = distance / gps_refresh_intervall; // Fallback
+
+    // Stationary / Drift suppression
+    // If speed is very low (< 1.0 m/s), we assume stationary.
+    // We only send if distance is LARGE (> 100m) to handle drift or slow creep.
+    if (speed_mps < 1.0)
     {
-        // 30 sec no new smartbeacon
-        if(gps_send_rate == 35)
-            gps_send_rate = 45;
-        else
-        if(gps_send_rate == 45)
-            gps_send_rate = 55;
-        else
-        if(gps_send_rate == 55)
-            gps_send_rate = 65;
-        else
-        if(gps_send_rate == 65)
-            gps_send_rate = 75;
-        else
+        if(distance < 100)
         {
-            if(meshcom_settings.node_postime > 0)
-                gps_send_rate = meshcom_settings.node_postime;
-            else
-                gps_send_rate = POSINFO_INTERVAL;
+            posinfo_last_rate = 1800;
+
+            if(bGPSDEBUG)
+                Serial.printf("%s [POSINFO]... STATIONARY (Speed %.1f, Dist %.0f) --> RATE:%i\n", getTimeString().c_str(), speed_mps, distance, (int)posinfo_last_rate);
+
+            return posinfo_last_rate;
         }
     }
+
+    if(bGPSDEBUG)
+        Serial.printf("%s [POSINFO]... dir:%.1lf° dist:%.1lf speed:%.1lf intervall:%.1lf\n", getTimeString().c_str(), posinfo_direction, distance, speed_mps, gps_refresh_intervall);
+
+    // Moving Logic
+    if(speed_mps < 4.0)             // Walking / Slow cycling (< 14 km/h)
+        gps_send_rate = 45;         // 45s
+    else if(speed_mps < 14.0)       // Cycling / City (< 50 km/h)
+        gps_send_rate = 30;
+    else if(speed_mps < 22.0)       // Fast driving (< 80 km/h)
+        gps_send_rate = 20;
+    else                            // Highway (> 80 km/h)
+        gps_send_rate = 15;
+
+    if(bGPSDEBUG)
+        Serial.printf("%s [POSINFO]... speed:%.1lf -> fast rate:%i\n", getTimeString().c_str(), speed_mps, (int)gps_send_rate);
 
     if(gps_send_rate < 200)  // seit letzter position
     {

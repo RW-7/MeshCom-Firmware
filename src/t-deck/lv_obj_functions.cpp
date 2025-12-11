@@ -2231,111 +2231,18 @@ static MsgTabEntry *msg_tabs_get_or_create_entry(const String &group, int *index
 
 static void log_message_to_sd(const String &group, const MsgBubble &bubble)
 {
-    if(!bSDDected) return;
+    String type = "incoming";
+    if(bubble.type == MsgBubbleType::Outgoing) type = "outgoing";
+    else if(bubble.type == MsgBubbleType::System) type = "system";
 
-    const char *path = "/messages.json";
-    
-    // Ensure file exists and has initial array structure
-    if(!SD.exists(path))
-    {
-        File f = SD.open(path, FILE_WRITE);
-        if(f) {
-            f.print("[\n]");
-            f.close();
-        } else {
-            return;
-        }
-    }
+    String line = "{";
+    line += "\"group\":\"" + escape_json(group) + "\",";
+    line += "\"type\":\"" + type + "\",";
+    line += "\"timestamp\":\"" + escape_json(bubble.timestamp) + "\",";
+    line += "\"header\":\"" + escape_json(bubble.header) + "\",";
+    line += "\"body\":\"" + escape_json(bubble.body) + "\"}";
 
-    File f = SD.open(path, "r+"); // Read/Update mode
-    if(!f) return;
-
-    // Find the closing ']'
-    size_t size = f.size();
-    if(size == 0) { 
-        f.close();
-        // Recreate if empty
-        f = SD.open(path, FILE_WRITE);
-        if(f) { f.print("[\n]"); f.close(); }
-        return;
-    }
-
-    const int BUF_SIZE = 32;
-    uint8_t buf[BUF_SIZE];
-    long pos = size;
-    bool found_bracket = false;
-    long bracket_pos = -1;
-    
-    // Scan backwards for ']'
-    while(pos > 0 && !found_bracket)
-    {
-        int to_read = (pos > BUF_SIZE) ? BUF_SIZE : pos;
-        pos -= to_read;
-        f.seek(pos);
-        f.read(buf, to_read);
-        
-        for(int i = to_read - 1; i >= 0; i--)
-        {
-            if(buf[i] == ']')
-            {
-                bracket_pos = pos + i;
-                found_bracket = true;
-                break;
-            }
-            else if(!isspace(buf[i]))
-            {
-                // Found unexpected char, abort
-                f.close();
-                return;
-            }
-        }
-    }
-
-    if(found_bracket)
-    {
-        // Check if array is empty (scan back for '[')
-        bool is_empty = false;
-        long scan_pos = bracket_pos - 1;
-        bool found_start = false;
-        
-        while(scan_pos >= 0 && !found_start)
-        {
-            int to_read = (scan_pos >= BUF_SIZE) ? BUF_SIZE : (scan_pos + 1);
-            long read_start = scan_pos - to_read + 1;
-            f.seek(read_start);
-            f.read(buf, to_read);
-            
-            for(int i = to_read - 1; i >= 0; i--)
-            {
-                if(buf[i] == '[') { is_empty = true; found_start = true; break; }
-                if(!isspace(buf[i])) { is_empty = false; found_start = true; break; }
-            }
-            scan_pos -= to_read;
-        }
-
-        f.seek(bracket_pos);
-        
-        if(!is_empty)
-            f.print(",\n");
-        else
-            f.print("\n"); // Just newline if empty
-
-        String type = "incoming";
-        if(bubble.type == MsgBubbleType::Outgoing) type = "outgoing";
-        else if(bubble.type == MsgBubbleType::System) type = "system";
-
-        String line = "{";
-        line += "\"group\":\"" + escape_json(group) + "\",";
-        line += "\"type\":\"" + type + "\",";
-        line += "\"timestamp\":\"" + escape_json(bubble.timestamp) + "\",";
-        line += "\"header\":\"" + escape_json(bubble.header) + "\",";
-        line += "\"body\":\"" + escape_json(bubble.body) + "\"}";
-        
-        f.print(line);
-        f.print("\n]");
-    }
-    
-    f.close();
+    log_json_to_sd("/messages.json", line);
 }
 
 static void msg_tabs_add_message(const String &group, const MsgBubble &bubble)
@@ -3262,6 +3169,16 @@ void tdeck_add_to_pos_view(String callsign, double u_dlat, char lat_c, double u_
 
     snprintf(buf, 24, "%.2lf%c/%.2lf%c/%i", dlat, lat_c, dlon, lon_c, alt);
     lv_table_set_cell_value(position_ta, 1, 2, buf);
+
+    // Log position to SD
+    String json = "{";
+    json += "\"call\":\"" + escape_json(callsign) + "\",";
+    json += "\"time\":\"" + escape_json(String(meshcom_settings.node_date_hour) + ":" + String(meshcom_settings.node_date_minute)) + "\",";
+    json += "\"lat\":" + String(dlat, 6) + ",";
+    json += "\"lon\":" + String(dlon, 6) + ",";
+    json += "\"alt\":" + String(alt);
+    json += "}";
+    log_json_to_sd("/positions.json", json);
 }
 
 /**

@@ -1087,7 +1087,7 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_obj_set_pos(position_ta, 0, 0);
     lv_obj_set_style_radius(position_ta, 10, 0);
     lv_obj_set_style_clip_corner(position_ta, true, 0);
-    lv_obj_set_size(position_ta, 302, LV_VER_RES * 0.6);
+    lv_obj_set_size(position_ta, 302, lv_pct(100));
 
     lv_table_set_row_cnt(position_ta, 1);
     lv_table_set_col_cnt(position_ta, 3);
@@ -1098,25 +1098,7 @@ void setDisplayLayout(lv_obj_t *parent)
 
     lv_obj_add_event_cb(position_ta, position_ta_draw_event, LV_EVENT_DRAW_PART_BEGIN, NULL);
 
-    lv_obj_set_height(position_ta, LV_VER_RES * 0.6);
-
-    // TIME
-    lv_obj_t * btn_time1 = lv_btn_create(t3);    /*Add a button the current screen*/
-    lv_obj_set_pos(btn_time1, 0, 145);           /*Set its position*/
-    lv_obj_set_size(btn_time1, 145, 20);         /*Set its size*/
-
-    btn_time_label1 = lv_label_create(btn_time1); /*Add a label to the button*/
-    lv_label_set_text(btn_time_label1, "time");  /*Set the labels text*/
-    lv_obj_center(btn_time_label1);
-
-    // BATT
-    lv_obj_t * btn_batt1 = lv_btn_create(t3);    /*Add a button the current screen*/
-    lv_obj_set_pos(btn_batt1, 146, 145);           /*Set its position*/
-    lv_obj_set_size(btn_batt1, 145, 20);         /*Set its size*/
-
-    btn_batt_label1 = lv_label_create(btn_batt1); /*Add a label to the button*/
-    lv_label_set_text(btn_batt_label1, "Batt --");  /*Set the labels text*/
-    lv_obj_center(btn_batt_label1);
+    // lv_obj_set_height(position_ta, LV_VER_RES * 0.6);
 
     ////////////////////////////////////////////////////////////////////////////
     // MAP
@@ -1173,7 +1155,7 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_obj_add_style(mheard_ta, &cell_style, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_add_style(mheard_ta, &cell_style1, LV_PART_ITEMS|LV_STATE_DEFAULT);
     lv_obj_set_pos(mheard_ta, 0, 0);
-    lv_obj_set_size(mheard_ta, 302, LV_VER_RES * 0.6);
+    lv_obj_set_size(mheard_ta, 302, lv_pct(100));
     lv_obj_set_style_radius(mheard_ta, 10, 0);
     lv_obj_set_style_clip_corner(mheard_ta, true, 0);
 
@@ -1187,27 +1169,9 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_table_set_col_width(mheard_ta, 4, 38);
     lv_table_set_col_width(mheard_ta, 5, 38);
 
-    lv_obj_set_height(mheard_ta, LV_VER_RES * 0.6);
+    // lv_obj_set_height(mheard_ta, LV_VER_RES * 0.6);
 
     lv_obj_add_event_cb(mheard_ta, mheard_ta_draw_event, LV_EVENT_DRAW_PART_BEGIN, NULL);
-
-    // TIME
-    lv_obj_t * btn_time2 = lv_btn_create(t4);    /*Add a button the current screen*/
-    lv_obj_set_pos(btn_time2, 0, 145);           /*Set its position*/
-    lv_obj_set_size(btn_time2, 145, 20);         /*Set its size*/
-
-    btn_time_label2 = lv_label_create(btn_time2); /*Add a label to the button*/
-    lv_label_set_text(btn_time_label2, "time");  /*Set the labels text*/
-    lv_obj_center(btn_time_label2);
-
-    // BATT
-    lv_obj_t * btn_batt2 = lv_btn_create(t4);    /*Add a button the current screen*/
-    lv_obj_set_pos(btn_batt2, 146, 145);           /*Set its position*/
-    lv_obj_set_size(btn_batt2, 145, 20);         /*Set its size*/
-
-    btn_batt_label2 = lv_label_create(btn_batt2); /*Add a label to the button*/
-    lv_label_set_text(btn_batt_label2, "Batt --");  /*Set the labels text*/
-    lv_obj_center(btn_batt_label2);
 
     ////////////////////////////////////////////////////////////////////////////
     // TEXT PATH
@@ -1215,7 +1179,7 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_obj_add_style(path_ta, &cell_style, LV_PART_MAIN|LV_STATE_DEFAULT);
     lv_obj_add_style(path_ta, &cell_style1, LV_PART_ITEMS|LV_STATE_DEFAULT);
     lv_obj_set_pos(path_ta, 0, 0);
-    lv_obj_set_size(path_ta, 302, LV_VER_RES * 0.6);
+    lv_obj_set_size(path_ta, 302, lv_pct(100));
     lv_obj_set_style_radius(path_ta, 10, 0);
     lv_obj_set_style_clip_corner(path_ta, true, 0);
 
@@ -1226,27 +1190,9 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_table_set_col_width(path_ta, 1, 40);
     lv_table_set_col_width(path_ta, 2, 182);
 
-    lv_obj_set_height(path_ta, LV_VER_RES * 0.6);
+    // lv_obj_set_height(path_ta, LV_VER_RES * 0.6);
 
     lv_obj_add_event_cb(path_ta, path_ta_draw_event, LV_EVENT_DRAW_PART_BEGIN, NULL);
-
-    // TIME
-    lv_obj_t * btn_time8 = lv_btn_create(t8);    /*Add a button the current screen*/
-    lv_obj_set_pos(btn_time8, 0, 145);           /*Set its position*/
-    lv_obj_set_size(btn_time8, 145, 20);         /*Set its size*/
-
-    btn_time_label4 = lv_label_create(btn_time8); /*Add a label to the button*/
-    lv_label_set_text(btn_time_label4, "time");  /*Set the labels text*/
-    lv_obj_center(btn_time_label4);
-
-    // BATT
-    lv_obj_t * btn_batt4 = lv_btn_create(t8);    /*Add a button the current screen*/
-    lv_obj_set_pos(btn_batt4, 146, 145);           /*Set its position*/
-    lv_obj_set_size(btn_batt4, 145, 20);         /*Set its size*/
-
-    btn_batt_label4 = lv_label_create(btn_batt4); /*Add a label to the button*/
-    lv_label_set_text(btn_batt_label4, "Batt --");  /*Set the labels text*/
-    lv_obj_center(btn_batt_label4);
 
     ////////////////////////////////////////////////////////////////////////////
     // TEXT INPUT

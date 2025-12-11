@@ -2257,6 +2257,38 @@ static void msg_tabs_add_message(const String &group, const MsgBubble &bubble)
     if(entry == NULL)
         return;
 
+    // Check if we can merge with the last bubble (System messages only)
+    if (bubble.type == MsgBubbleType::System && !entry->bubbles.empty())
+    {
+        MsgBubble &last = entry->bubbles.back();
+        if (last.type == MsgBubbleType::System)
+        {
+            // Merge bodies
+            last.body += "\n" + bubble.body;
+            
+            // Update UI if this tab is active and we are not loading from file
+            if (!loading_messages_from_file && index == msg_active_tab_index)
+            {
+                lv_obj_t *last_wrapper = lv_obj_get_child(msg_list, -1);
+                if(last_wrapper)
+                {
+                    lv_obj_t *bubble_obj = lv_obj_get_child(last_wrapper, 0);
+                    if(bubble_obj)
+                    {
+                        // Body label is at index 1 (0 is header_row)
+                        lv_obj_t *body_label = lv_obj_get_child(bubble_obj, 1);
+                        if(body_label)
+                        {
+                            lv_label_set_text(body_label, last.body.c_str());
+                            lv_obj_scroll_to_view(last_wrapper, LV_ANIM_ON);
+                        }
+                    }
+                }
+            }
+            return; // Done, merged
+        }
+    }
+
     entry->bubbles.push_back(bubble);
     msg_tabs_trim_history(entry->bubbles);
 

@@ -2229,6 +2229,115 @@ static MsgTabEntry *msg_tabs_get_or_create_entry(const String &group, int *index
     return &msg_tab_entries.back();
 }
 
+static void log_message_to_sd(const String &group, const MsgBubble &bubble)
+{
+    if(!bSDDected) return;
+
+    const char *path = "/messages.json";
+    
+    // Ensure file exists and has initial array structure
+    if(!SD.exists(path))
+    {
+        File f = SD.open(path, FILE_WRITE);
+        if(f) {
+            f.print("[\n]");
+            f.close();
+        } else {
+            return;
+        }
+    }
+
+    File f = SD.open(path, "r+"); // Read/Update mode
+    if(!f) return;
+
+    // Find the closing ']'
+    size_t size = f.size();
+    if(size == 0) { 
+        f.close();
+        // Recreate if empty
+        f = SD.open(path, FILE_WRITE);
+        if(f) { f.print("[\n]"); f.close(); }
+        return;
+    }
+
+    const int BUF_SIZE = 32;
+    uint8_t buf[BUF_SIZE];
+    long pos = size;
+    bool found_bracket = false;
+    long bracket_pos = -1;
+    
+    // Scan backwards for ']'
+    while(pos > 0 && !found_bracket)
+    {
+        int to_read = (pos > BUF_SIZE) ? BUF_SIZE : pos;
+        pos -= to_read;
+        f.seek(pos);
+        f.read(buf, to_read);
+        
+        for(int i = to_read - 1; i >= 0; i--)
+        {
+            if(buf[i] == ']')
+            {
+                bracket_pos = pos + i;
+                found_bracket = true;
+                break;
+            }
+            else if(!isspace(buf[i]))
+            {
+                // Found unexpected char, abort
+                f.close();
+                return;
+            }
+        }
+    }
+
+    if(found_bracket)
+    {
+        // Check if array is empty (scan back for '[')
+        bool is_empty = false;
+        long scan_pos = bracket_pos - 1;
+        bool found_start = false;
+        
+        while(scan_pos >= 0 && !found_start)
+        {
+            int to_read = (scan_pos >= BUF_SIZE) ? BUF_SIZE : (scan_pos + 1);
+            long read_start = scan_pos - to_read + 1;
+            f.seek(read_start);
+            f.read(buf, to_read);
+            
+            for(int i = to_read - 1; i >= 0; i--)
+            {
+                if(buf[i] == '[') { is_empty = true; found_start = true; break; }
+                if(!isspace(buf[i])) { is_empty = false; found_start = true; break; }
+            }
+            scan_pos -= to_read;
+        }
+
+        f.seek(bracket_pos);
+        
+        if(!is_empty)
+            f.print(",\n");
+        else
+            f.print("\n"); // Just newline if empty
+
+        String type = "incoming";
+        if(bubble.type == MsgBubbleType::Outgoing) type = "outgoing";
+        else if(bubble.type == MsgBubbleType::System) type = "system";
+
+        String line = "{";
+        line += "\"group\":\"" + escape_json(group) + "\",";
+        line += "\"type\":\"" + type + "\",";
+        line += "\"timestamp\":\"" + escape_json(bubble.timestamp) + "\",";
+        line += "\"header\":\"" + escape_json(bubble.header) + "\",";
+        line += "\"body\":\"" + escape_json(bubble.body) + "\"}";
+        
+        f.print(line);
+        f.print("\n]");
+    }
+    
+    f.close();
+}
+
 static void msg_tabs_add_message(const String &group, const MsgBubble &bubble)
 {
     String normalized = group;
@@ -2248,6 +2357,9 @@ static void msg_tabs_add_message(const String &group, const MsgBubble &bubble)
     /* Persist non-system messages into messages.jsonl */
     if(!loading_messages_from_file && bubble.type != MsgBubbleType::System)
     {
+        // Log to SD card immediately (append)
+        log_message_to_sd(normalized, bubble);
+
         persisted_msgs.push_back(std::make_pair(normalized, bubble));
         if(persisted_msgs.size() > PERSISTED_MSG_LIMIT)
         {
@@ -2729,7 +2841,7 @@ static void save_persisted_messages(void)
         }
     }
     
-    if(!spiffs_available && !bSDDected)
+    if(!spiffs_available)
         return;
 
     const char *tmp = "/messages.json.tmp";
@@ -2747,21 +2859,7 @@ static void save_persisted_messages(void)
         }
     }
 
-    File f_sd;
-    if(bSDDected)
-    {
-        f_sd = SD.open(tmp, FILE_WRITE);
-        if(!f_sd)
-        {
-            Serial.println("[MSG] Failed to open temp messages file on SD for writing");
-        }
-        else
-        {
-            f_sd.println("[");
-        }
-    }
-
-    if(!f && !f_sd)
+    if(!f)
         return;
 
     size_t count = 0;
@@ -2787,7 +2885,6 @@ static void save_persisted_messages(void)
             line += ",";
 
         if(f) f.println(line);
-        if(f_sd) f_sd.println(line);
     }
 
     if(f)
@@ -2800,18 +2897,6 @@ static void save_persisted_messages(void)
         if(SPIFFS.exists(PERSISTED_MSG_FILE))
             SPIFFS.remove(PERSISTED_MSG_FILE);
         SPIFFS.rename(tmp, PERSISTED_MSG_FILE);
-    }
-
-    if(f_sd)
-    {
-        f_sd.println("]");
-        f_sd.flush();
-        f_sd.close();
-
-        // rename tmp -> final
-        if(SD.exists(PERSISTED_MSG_FILE))
-            SD.remove(PERSISTED_MSG_FILE);
-        SD.rename(tmp, PERSISTED_MSG_FILE);
     }
 
     // SPIFFS.end(); // Do not unmount

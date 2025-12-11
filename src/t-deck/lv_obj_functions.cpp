@@ -1171,6 +1171,13 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_table_set_col_width(mheard_ta, 4, 38);
     lv_table_set_col_width(mheard_ta, 5, 38);
 
+    lv_table_set_cell_value(mheard_ta, 0, 0, "Call");
+    lv_table_set_cell_value(mheard_ta, 0, 1, "Time");
+    lv_table_set_cell_value(mheard_ta, 0, 2, "Typ");
+    lv_table_set_cell_value(mheard_ta, 0, 3, "HW");
+    lv_table_set_cell_value(mheard_ta, 0, 4, "Mod");
+    lv_table_set_cell_value(mheard_ta, 0, 5, "Dist");
+
     // lv_obj_set_height(mheard_ta, LV_VER_RES * 0.6);
 
     lv_obj_add_event_cb(mheard_ta, mheard_ta_draw_event, LV_EVENT_DRAW_PART_BEGIN, NULL);
@@ -1192,6 +1199,10 @@ void setDisplayLayout(lv_obj_t *parent)
     lv_table_set_col_width(path_ta, 0, 76);
     lv_table_set_col_width(path_ta, 1, 40);
     lv_table_set_col_width(path_ta, 2, 182);
+
+    lv_table_set_cell_value(path_ta, 0, 0, "Call");
+    lv_table_set_cell_value(path_ta, 0, 1, "Time");
+    lv_table_set_cell_value(path_ta, 0, 2, "Path");
 
     // lv_obj_set_height(path_ta, LV_VER_RES * 0.6);
 

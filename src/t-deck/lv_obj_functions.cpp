@@ -23,6 +23,8 @@
 #include <cstring>
 #include <cctype>
 #include <vector>
+#include <SD.h>
+#include <SPI.h>
 
 #include "event_functions.h"
 #include <lora_setchip.h>
@@ -2726,16 +2728,33 @@ static void save_persisted_messages(void)
             Serial.println("[MSG] SPIFFS begin failed (save) — partition not found");
         }
     }
-    if(!spiffs_available)
+    
+    if(!spiffs_available && !bSDDected)
         return;
 
     const char *tmp = "/messages.jsonl.tmp";
-    File f = SPIFFS.open(tmp, FILE_WRITE);
-    if(!f)
+    File f;
+    if(spiffs_available)
     {
-        Serial.println("[MSG] Failed to open temp messages file for writing");
-        return;
+        f = SPIFFS.open(tmp, FILE_WRITE);
+        if(!f)
+        {
+            Serial.println("[MSG] Failed to open temp messages file for writing");
+        }
     }
+
+    File f_sd;
+    if(bSDDected)
+    {
+        f_sd = SD.open(tmp, FILE_WRITE);
+        if(!f_sd)
+        {
+            Serial.println("[MSG] Failed to open temp messages file on SD for writing");
+        }
+    }
+
+    if(!f && !f_sd)
+        return;
 
     for(const auto &p : persisted_msgs)
     {
@@ -2752,16 +2771,31 @@ static void save_persisted_messages(void)
         line += "\"header\":\"" + escape_json(b.header) + "\",";
         line += "\"body\":\"" + escape_json(b.body) + "\"}";
 
-        f.println(line);
+        if(f) f.println(line);
+        if(f_sd) f_sd.println(line);
     }
 
-    f.flush();
-    f.close();
+    if(f)
+    {
+        f.flush();
+        f.close();
 
-    // rename tmp -> final
-    if(SPIFFS.exists(PERSISTED_MSG_FILE))
-        SPIFFS.remove(PERSISTED_MSG_FILE);
-    SPIFFS.rename(tmp, PERSISTED_MSG_FILE);
+        // rename tmp -> final
+        if(SPIFFS.exists(PERSISTED_MSG_FILE))
+            SPIFFS.remove(PERSISTED_MSG_FILE);
+        SPIFFS.rename(tmp, PERSISTED_MSG_FILE);
+    }
+
+    if(f_sd)
+    {
+        f_sd.flush();
+        f_sd.close();
+
+        // rename tmp -> final
+        if(SD.exists(PERSISTED_MSG_FILE))
+            SD.remove(PERSISTED_MSG_FILE);
+        SD.rename(tmp, PERSISTED_MSG_FILE);
+    }
 
     // SPIFFS.end(); // Do not unmount
     // update flush timestamp and reset unsaved counter

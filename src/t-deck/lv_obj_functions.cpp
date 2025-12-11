@@ -2295,9 +2295,20 @@ static void msg_tabs_add_message(const String &group, const MsgBubble &bubble)
     // or if we don't have any active tab yet.
     // This prevents System logs from pulling focus away from user conversations.
     // Also do NOT switch tabs if we are currently loading messages from file.
-    if (!loading_messages_from_file && (bubble.type != MsgBubbleType::System || msg_active_tab_index < 0))
+    if (!loading_messages_from_file)
     {
-        msg_tabs_select_index(index);
+        if (index == msg_active_tab_index)
+        {
+            // Already active, just append to view
+            msg_list_append_bubble(bubble);
+            lv_obj_t *last = lv_obj_get_child(msg_list, -1);
+            if(last != NULL)
+                lv_obj_scroll_to_view(last, LV_ANIM_ON);
+        }
+        else if (bubble.type != MsgBubbleType::System || msg_active_tab_index < 0)
+        {
+            msg_tabs_select_index(index);
+        }
     }
 }
 
@@ -3343,7 +3354,13 @@ void tdeck_add_system_message(const char *text)
     bubble.timestamp = build_timestamp_string();
     bubble.body = String(text);
 
-    msg_tabs_add_message("SYSTEM", bubble);
+    String group = "SYSTEM";
+    if(msg_active_tab_index >= 0 && msg_active_tab_index < (int)msg_tab_entries.size())
+    {
+        group = msg_tab_entries[msg_active_tab_index].group;
+    }
+
+    msg_tabs_add_message(group, bubble);
     msg_focus_and_alert(false);
 }
 

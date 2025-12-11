@@ -159,7 +159,7 @@ static const size_t MSG_TAB_MAX_MESSAGES = 50;
 static std::vector<std::pair<String, MsgBubble>> persisted_msgs;
 static bool loading_messages_from_file = false;
 static const size_t PERSISTED_MSG_LIMIT = 1000;
-static const char *PERSISTED_MSG_FILE = "/messages.jsonl";
+static const char *PERSISTED_MSG_FILE = "/messages.json";
 static int unsaved_msgs_count = 0;
 static const int FLUSH_THRESHOLD = 10;
 static unsigned long last_flush_millis = 0;
@@ -2732,7 +2732,7 @@ static void save_persisted_messages(void)
     if(!spiffs_available && !bSDDected)
         return;
 
-    const char *tmp = "/messages.jsonl.tmp";
+    const char *tmp = "/messages.json.tmp";
     File f;
     if(spiffs_available)
     {
@@ -2740,6 +2740,10 @@ static void save_persisted_messages(void)
         if(!f)
         {
             Serial.println("[MSG] Failed to open temp messages file for writing");
+        }
+        else
+        {
+            f.println("[");
         }
     }
 
@@ -2751,13 +2755,21 @@ static void save_persisted_messages(void)
         {
             Serial.println("[MSG] Failed to open temp messages file on SD for writing");
         }
+        else
+        {
+            f_sd.println("[");
+        }
     }
 
     if(!f && !f_sd)
         return;
 
+    size_t count = 0;
+    size_t total = persisted_msgs.size();
+
     for(const auto &p : persisted_msgs)
     {
+        count++;
         const String &group = p.first;
         const MsgBubble &b = p.second;
         String type = "incoming";
@@ -2771,12 +2783,16 @@ static void save_persisted_messages(void)
         line += "\"header\":\"" + escape_json(b.header) + "\",";
         line += "\"body\":\"" + escape_json(b.body) + "\"}";
 
+        if(count < total)
+            line += ",";
+
         if(f) f.println(line);
         if(f_sd) f_sd.println(line);
     }
 
     if(f)
     {
+        f.println("]");
         f.flush();
         f.close();
 
@@ -2788,6 +2804,7 @@ static void save_persisted_messages(void)
 
     if(f_sd)
     {
+        f_sd.println("]");
         f_sd.flush();
         f_sd.close();
 
@@ -2851,6 +2868,8 @@ static void load_persisted_messages(void)
         String line = f.readStringUntil('\n');
         line.trim();
         if(line.length() == 0) continue;
+        if(line == "[" || line == "]") continue;
+        if(line.endsWith(",")) line.remove(line.length()-1);
 
         // naive parse because we wrote a controlled JSON format
         auto extract = [&](const char *key)->String{

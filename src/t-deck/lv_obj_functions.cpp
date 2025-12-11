@@ -172,7 +172,6 @@ static void msg_flush_timer_cb(lv_timer_t *t);
 static lv_timer_t *msg_flush_timer = NULL;
 static lv_timer_t *track_clear_timer = NULL;
 
-static String escape_json(const String &s);
 static String unescape_json(const String &s);
 static void save_persisted_messages(void);
 static void load_persisted_messages(void);
@@ -2682,23 +2681,6 @@ static void msg_tabs_clear_all(void)
 }
 
 // -- Persistence implementation -------------------------------------------------
-
-static String escape_json(const String &s)
-{
-    String out;
-    out.reserve(s.length() * 2 + 8);
-    for(size_t i = 0; i < s.length(); ++i)
-    {
-        char c = s[i];
-        if(c == '"') out += "\\\"";
-        else if(c == '\\') out += "\\\\";
-        else if(c == '\n') out += "\\n";
-        else if(c == '\r') out += "\\r";
-        else if(c == '\t') out += "\\t";
-        else out += c;
-    }
-    return out;
-}
 
 static String unescape_json(const String &s)
 {
